@@ -11,7 +11,6 @@ const SetupGuide = ({ onDismiss, onStepComplete, items }) => {
   const completedItemsLength = items.filter((item) => item.complete).length;
 
   return (
-    <>
     <s-section padding="none">
       <s-box padding="base" paddingBlockEnd="none">
         <s-stack direction="block" gap="none">
@@ -122,7 +121,6 @@ const SetupGuide = ({ onDismiss, onStepComplete, items }) => {
         </s-box>
       ) : null}
     </s-section>
-    <br></br></>
   );
 };
 
