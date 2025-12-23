@@ -1,8 +1,8 @@
-// app/routes/app.settings.jsx
+// app/routes/app._index.jsx
 import { useState, useEffect } from "react";
-import { useFetcher, useLoaderData } from "react-router";
+import { useFetcher, useLoaderData, Link, useNavigate } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
-import { authenticate } from "../shopify.server";
+import { authenticate, getAppMetafields, setAppMetafield, parseMetafields } from "../shopify.server";
 
 // SetupGuide Component
 const SetupGuide = ({ onDismiss, onStepComplete, items }) => {
@@ -12,117 +12,118 @@ const SetupGuide = ({ onDismiss, onStepComplete, items }) => {
 
   return (
     <>
-    <s-section padding="none">
-      <s-box padding="base" paddingBlockEnd="none">
-        <s-stack direction="block" gap="none">
-          <s-stack direction="inline" justifyContent="space-between" alignItems="center">
-            <s-heading level="h3">
-              Setup Guide
-            </s-heading>
-            <s-stack direction="inline" gap="extra-tight" wrap={false}>
-              <s-button
-                variant="tertiary"
-                icon="menu-horizontal"
-                onClick={() => onDismiss()}
-              />
-              <s-button
-                variant="tertiary"
-                icon={isGuideOpen ? "chevron-up" : "chevron-down"}
-                onClick={() => {
-                  setIsGuideOpen((prev) => {
-                    if (!prev) setExpanded(items.findIndex((item) => !item.complete));
-                    return !prev;
-                  });
-                }}
-              />
+      <s-section padding="none">
+        <s-box padding="base" paddingBlockEnd="none">
+          <s-stack direction="block" gap="none">
+            <s-stack direction="inline" justifyContent="space-between" alignItems="center">
+              <s-heading level="h3">
+                Setup Guide
+              </s-heading>
+              <s-stack direction="inline" gap="extra-tight" wrap={false}>
+                <s-button
+                  variant="tertiary"
+                  icon="menu-horizontal"
+                  onClick={() => onDismiss()}
+                />
+                <s-button
+                  variant="tertiary"
+                  icon={isGuideOpen ? "chevron-up" : "chevron-down"}
+                  onClick={() => {
+                    setIsGuideOpen((prev) => {
+                      if (!prev) setExpanded(items.findIndex((item) => !item.complete));
+                      return !prev;
+                    });
+                  }}
+                />
+              </s-stack>
             </s-stack>
-          </s-stack>
-          <s-text>
-            Use this personalized guide to get your app up and running.
-          </s-text>
-          <div style={{ marginTop: '.8rem' }}>
-            <s-stack direction="inline" alignItems="center" gap="small-300" paddingBlockEnd={!isGuideOpen ? 'small' : 'none'}>
-              {completedItemsLength === items.length ? (
-                <s-stack direction="inline" wrap={false} gap="extra-small">
-                  <s-icon
-                    source="check"
-                    tone="subdued"
-                  />
+            <s-text>
+              Use this personalized guide to get your app up and running.
+            </s-text>
+            <div style={{ marginTop: '.8rem' }}>
+              <s-stack direction="inline" alignItems="center" gap="small-300" paddingBlockEnd={!isGuideOpen ? 'small' : 'none'}>
+                {completedItemsLength === items.length ? (
+                  <s-stack direction="inline" wrap={false} gap="extra-small">
+                    <s-icon
+                      source="check"
+                      tone="subdued"
+                    />
+                    <s-text tone="subdued">
+                      Done
+                    </s-text>
+                  </s-stack>
+                ) : (
                   <s-text tone="subdued">
-                    Done
+                    {`${completedItemsLength} / ${items.length} completed`}
                   </s-text>
-                </s-stack>
-              ) : (
-                <s-text tone="subdued">
-                  {`${completedItemsLength} / ${items.length} completed`}
-                </s-text>
-              )}
+                )}
 
-              {completedItemsLength !== items.length ? (
-                <div style={{ width: '100px' }}>
-                  <div
-                    style={{
-                      width: '100%',
-                      height: '8px',
-                      backgroundColor: 'var(--p-color-border-secondary)',
-                      borderRadius: '4px',
-                      overflow: 'hidden'
-                    }}
-                  >
+                {completedItemsLength !== items.length ? (
+                  <div style={{ width: '100px' }}>
                     <div
                       style={{
-                        width: `${(items.filter((item) => item.complete).length / items.length) * 100}%`,
-                        height: '100%',
-                        backgroundColor: 'var(--p-color-bg-inverse)',
+                        width: '100%',
+                        height: '8px',
+                        backgroundColor: 'var(--p-color-border-secondary)',
                         borderRadius: '4px',
-                        transition: 'width 0.3s ease-in-out'
+                        overflow: 'hidden'
                       }}
-                    />
+                    >
+                      <div
+                        style={{
+                          width: `${(items.filter((item) => item.complete).length / items.length) * 100}%`,
+                          height: '100%',
+                          backgroundColor: 'var(--p-color-bg-inverse)',
+                          borderRadius: '4px',
+                          transition: 'width 0.3s ease-in-out'
+                        }}
+                      />
+                    </div>
                   </div>
-                </div>
-              ) : null}
-            </s-stack>
-          </div>
-        </s-stack>
-      </s-box>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateRows: isGuideOpen ? '1fr' : '0fr',
-          transition: 'grid-template-rows 0.1s ease-out',
-          paddingBlockStart: isGuideOpen ? '20px' : '0px'
-        }}
-      >
-        <div style={{ overflow: 'hidden' }}>
-          <s-box padding="small-300">
-            <s-stack direction="block" gap="small-400">
-              {items.map((item) => (
-                <SetupItem
-                  key={item.id}
-                  expanded={expanded === item.id}
-                  setExpanded={() => setExpanded(item.id)}
-                  onComplete={onStepComplete}
-                  {...item}
-                />
-              ))}
-            </s-stack>
-          </s-box>
-        </div>
-      </div>
-      {completedItemsLength === items.length ? (
-        <s-box
-          background="subdued"
-          borderBlockStartWidth="small"
-          borderColor="border-secondary"
-          padding="base"
-        >
-          <s-stack direction="inline" justifyContent="end">
-            <s-button onClick={onDismiss}>Dismiss Guide</s-button>
+                ) : null}
+              </s-stack>
+            </div>
           </s-stack>
         </s-box>
-      ) : null}
-    </s-section>
-    <br></br></>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateRows: isGuideOpen ? '1fr' : '0fr',
+            transition: 'grid-template-rows 0.1s ease-out',
+            paddingBlockStart: isGuideOpen ? '20px' : '0px'
+          }}
+        >
+          <div style={{ overflow: 'hidden' }}>
+            <s-box padding="small-300">
+              <s-stack direction="block" gap="small-400">
+                {items.map((item) => (
+                  <SetupItem
+                    key={item.id}
+                    expanded={expanded === item.id}
+                    setExpanded={() => setExpanded(item.id)}
+                    onComplete={onStepComplete}
+                    {...item}
+                  />
+                ))}
+              </s-stack>
+            </s-box>
+          </div>
+        </div>
+        {completedItemsLength === items.length ? (
+          <s-box
+            background="subdued"
+            borderBlockStartWidth="small"
+            borderColor="border-secondary"
+            padding="base"
+          >
+            <s-stack direction="inline" justifyContent="end">
+              <s-button onClick={onDismiss}>Dismiss Guide</s-button>
+            </s-stack>
+          </s-box>
+        ) : null}
+      </s-section>
+      <br></br>
+    </>
   );
 };
 
@@ -260,169 +261,418 @@ const SETUP_ITEMS = [
     id: 0,
     title: "Create Tree Planting Product",
     description: "Set up a special product that allows customers to donate towards planting trees.",
-    complete: true,
-    primaryButton: {
-      content: "Create Product",
-      props: {
-        onClick: () => console.log("Create product clicked"),
-      },
-    },
+    complete: false,
   },
   {
     id: 1,
     title: "Configure Cart Settings",
     description: "Enable the tree planting donation checkbox in the cart for your customers.",
     complete: false,
-    primaryButton: {
-      content: "Configure",
-      props: {
-        onClick: () => console.log("Configure clicked"),
-      },
-    },
   },
   {
     id: 2,
     title: "Set Up Pricing Plan",
     description: "Choose a pricing plan that fits your store's needs and volume.",
     complete: false,
-    primaryButton: {
-      content: "View Plans",
-      props: {
-        onClick: () => console.log("View plans clicked"),
-      },
-    },
   },
 ];
 
-// Fixed price options
-const PRICE_OPTIONS = [
-  { value: "5.00", label: "$5.00" },
-  { value: "10.00", label: "$10.00" },
-  { value: "15.00", label: "$15.00" },
-  { value: "20.00", label: "$20.00" },
-  { value: "25.00", label: "$25.00" },
-];
-
+// Loader function
 export const loader = async ({ request }) => {
   try {
     const { admin } = await authenticate.admin(request);
 
+    // Get all app metafields
+    const metafields = await getAppMetafields(admin);
+    const parsedFields = parseMetafields(metafields);
+    
+    console.log('Loaded metafields:', parsedFields);
+
     let shopifyProduct = null;
     let exists = false;
-
-    const response = await admin.graphql(
-      `#graphql
-      query {
-        products(first: 5, query: "title:'Support Tree Planting'") {
-          edges {
-            node {
+    let productId = parsedFields.product_id;
+    
+    // Check if product exists in Shopify
+    if (productId) {
+      try {
+        const response = await admin.graphql(
+          `#graphql
+          query GetProduct($id: ID!) {
+            product(id: $id) {
               id
               title
               handle
               status
+              variants(first: 10) {
+                edges {
+                  node {
+                    id
+                    price
+                  }
+                }
+              }
             }
+          }`,
+          {
+            variables: { id: productId }
           }
+        );
+        const responseJson = await response.json();
+        
+        if (responseJson.data?.product) {
+          shopifyProduct = responseJson.data.product;
+          exists = true;
+          
+          // Update donation amount from product price
+          const currentPrice = shopifyProduct.variants.edges[0]?.node?.price || "0.00";
+          if (parsedFields.donation_amount !== currentPrice) {
+            // Update metafield with current price
+            await setAppMetafield(admin, {
+              key: 'donation_amount',
+              type: 'string',
+              value: currentPrice,
+            });
+            parsedFields.donation_amount = currentPrice;
+          }
+        } else {
+          // Product not found in Shopify, clear stored ID
+          await setAppMetafield(admin, {
+            key: 'product_id',
+            type: 'string',
+            value: "",
+          });
         }
-      }`
-    );
-    const responseJson = await response.json();
-    shopifyProduct = responseJson.data.products.edges[0]?.node || null;
-    exists = !!shopifyProduct;
+      } catch (error) {
+        console.error('Error fetching product by ID:', error);
+      }
+    }
+    
+    // If no product found by ID, search by title
+    if (!shopifyProduct) {
+      try {
+        const response = await admin.graphql(
+          `#graphql
+          query {
+            products(first: 10, query: "title:'Support Tree Planting'") {
+              edges {
+                node {
+                  id
+                  title
+                  handle
+                  status
+                  variants(first: 10) {
+                    edges {
+                      node {
+                        id
+                        price
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }`
+        );
+        const responseJson = await response.json();
+        const products = responseJson.data.products.edges;
+        
+        if (products && products.length > 0) {
+          shopifyProduct = products[0].node;
+          exists = true;
+          
+          // Store product ID in metafields
+          await setAppMetafield(admin, {
+            key: 'product_id',
+            type: 'string',
+            value: shopifyProduct.id,
+          });
+          
+          // Store donation amount
+          const productPrice = shopifyProduct.variants.edges[0]?.node?.price || "0.00";
+          await setAppMetafield(admin, {
+            key: 'donation_amount',
+            type: 'string',
+            value: productPrice,
+          });
+          parsedFields.donation_amount = productPrice;
+        }
+      } catch (error) {
+        console.error('Error searching product by title:', error);
+      }
+    }
 
-    return { shopifyProduct, exists, hasError: false };
+    // Check cart enabled status
+    const cartEnabled = parsedFields.cart_enabled === 'true' || parsedFields.cart_enabled === true;
+    
+    return { 
+      shopifyProduct, 
+      exists, 
+      hasError: false,
+      donationAmount: parsedFields.donation_amount || "0.00",
+      cartEnabled: cartEnabled,
+      productData: parsedFields.product_data || null,
+      metafields: parsedFields
+    };
   } catch (error) {
+    console.error('Loader error:', error);
     return {
       shopifyProduct: null,
       exists: false,
       hasError: true,
-      errorMessage: error.message,
+      errorMessage: error.message || 'Failed to load app data',
+      donationAmount: "0.00",
+      cartEnabled: false,
     };
   }
 };
 
+// Action function - Simplified: No price selection needed
 export const action = async ({ request }) => {
   try {
     const { admin } = await authenticate.admin(request);
     const formData = await request.formData();
-    const selectedPrice = formData.get("price");
+    const actionType = formData.get("actionType") || "create";
 
-    const productResponse = await admin.graphql(
-      `#graphql
-      mutation createTreePlantingProduct($product: ProductCreateInput!) {
-        productCreate(product: $product) {
-          product { id title handle status variants(first: 10) { edges { node { id price }}}}
+    if (actionType === "create") {
+      // Check if product already exists in metafields
+      const metafields = await getAppMetafields(admin);
+      const parsedFields = parseMetafields(metafields);
+      
+      if (parsedFields.product_id) {
+        try {
+          const checkResponse = await admin.graphql(
+            `#graphql
+            query GetProduct($id: ID!) {
+              product(id: $id) {
+                id
+                title
+                status
+              }
+            }`,
+            { variables: { id: parsedFields.product_id } }
+          );
+          const checkJson = await checkResponse.json();
+          if (checkJson.data?.product && checkJson.data.product.status !== 'ARCHIVED') {
+            return { 
+              success: false, 
+              error: "Product already exists. Please delete it in Shopify first.",
+              productId: parsedFields.product_id
+            };
+          }
+        } catch (error) {
+          // Product not found, continue with creation
         }
-      }`,
-      {
-        variables: {
-          product: { title: "Support Tree Planting" },
-        },
       }
-    );
 
-    const productJson = await productResponse.json();
-    const product = productJson.data.productCreate.product;
-    const variantId = product.variants.edges[0].node.id;
-
-    const variantResponse = await admin.graphql(
-      `#graphql
-        mutation updateVariantPrice($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-          productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-            productVariants { id price }
+      // Create product with $0.00 price - merchant will set price in Shopify
+      const productResponse = await admin.graphql(
+        `#graphql
+        mutation createTreePlantingProduct($input: ProductInput!) {
+          productCreate(input: $input) {
+            product {
+              id
+              title
+              handle
+              status
+              variants(first: 10) {
+                edges {
+                  node {
+                    id
+                    price
+                  }
+                }
+              }
+            }
+            userErrors {
+              field
+              message
+            }
           }
         }`,
-      {
-        variables: {
-          productId: product.id,
-          variants: [{ id: variantId, price: selectedPrice }],
-        },
+        {
+          variables: {
+            input: {
+              title: "Support Tree Planting",
+              productType: "Donation",
+              vendor: "Tree Planting",
+              descriptionHtml: "<p>Support tree planting with your purchase. Every donation helps plant trees and restore our environment.</p>",
+              tags: ["donation", "tree-planting", "charity"],
+              status: "ACTIVE"
+            },
+          },
+        }
+      );
+
+      const productJson = await productResponse.json();
+      
+      console.log('Product creation response:', productJson);
+      
+      if (productJson.data.productCreate.userErrors?.length > 0) {
+        return { 
+          success: false, 
+          error: productJson.data.productCreate.userErrors[0].message 
+        };
       }
-    );
 
-    const variantJson = await variantResponse.json();
+      const product = productJson.data.productCreate.product;
+      const variantId = product.variants.edges[0]?.node?.id;
+      const currentPrice = product.variants.edges[0]?.node?.price || "0.00";
 
-    return {
-      product,
-      variant: variantJson.data.productVariantsBulkUpdate.productVariants,
-      success: true,
-    };
+      // Store in app metafields
+      await setAppMetafield(admin, {
+        key: 'product_id',
+        type: 'string',
+        value: product.id,
+      });
+
+      await setAppMetafield(admin, {
+        key: 'donation_amount',
+        type: 'string',
+        value: currentPrice,
+      });
+
+      await setAppMetafield(admin, {
+        key: 'product_data',
+        type: 'json',
+        value: {
+          productId: product.id,
+          title: product.title,
+          handle: product.handle,
+          price: currentPrice,
+          variantId: variantId,
+          createdAt: new Date().toISOString(),
+          status: product.status,
+        },
+      });
+
+      // Initialize cart settings to false
+      await setAppMetafield(admin, {
+        key: 'cart_enabled',
+        type: 'boolean',
+        value: "false",
+      });
+
+      return {
+        product,
+        success: true,
+      };
+    }
+
+    return { success: false, error: "Invalid action type" };
   } catch (error) {
-    return { success: false, error: error.message };
+    console.error('Action error:', error);
+    return { 
+      success: false, 
+      error: error.message || "Failed to create product. Please try again." 
+    };
   }
 };
 
+// Main Component - Simplified: No price dropdown
 export default function HomeProductCreation() {
   const fetcher = useFetcher();
   const loaderData = useLoaderData();
   const shopify = useAppBridge();
+  const navigate = useNavigate();
 
-  const [selectedPrice, setSelectedPrice] = useState(PRICE_OPTIONS[0].value);
   const [productExists, setProductExists] = useState(loaderData.exists);
   const [showGuide, setShowGuide] = useState(true);
   const [items, setItems] = useState(SETUP_ITEMS);
+
+  // Update setup items based on actual state
+  useEffect(() => {
+    const updatedItems = SETUP_ITEMS.map(item => {
+      if (item.id === 0) {
+        return { 
+          ...item, 
+          complete: productExists,
+          primaryButton: productExists ? undefined : {
+            content: "Create Product",
+            props: {
+              onClick: () => {
+                fetcher.submit(
+                  { 
+                    actionType: "create" 
+                  }, 
+                  { method: "POST" }
+                );
+              },
+              disabled: fetcher.state === 'submitting'
+            }
+          }
+        };
+      }
+      if (item.id === 1) {
+        return { 
+          ...item, 
+          complete: loaderData.cartEnabled || false,
+          primaryButton: productExists ? {
+            content: "Configure",
+            props: {
+              onClick: () => navigate('/app/cart-settings'),
+            }
+          } : undefined,
+          description: !productExists 
+            ? "Please create the Tree Planting product first to configure cart settings."
+            : "Enable the tree planting donation checkbox in the cart for your customers."
+        };
+      }
+      if (item.id === 2) {
+        return { 
+          ...item,
+          primaryButton: {
+            content: "View Plans",
+            props: {
+              onClick: () => navigate('/app/pricing'),
+            }
+          }
+        };
+      }
+      return item;
+    });
+    setItems(updatedItems);
+  }, [productExists, loaderData.cartEnabled, fetcher.state, navigate]);
 
   const isLoading = ["loading", "submitting"].includes(fetcher.state) && fetcher.formMethod === "POST";
   const hasActionError = fetcher.data?.success === false;
 
   useEffect(() => {
     if (fetcher.data?.success) {
-      setProductExists(true);
-      shopify.toast.show("Support Tree Planting product created");
+      if (fetcher.data.product) {
+        setProductExists(true);
+        shopify.toast.show("Support Tree Planting product created successfully!");
+      }
     } else if (hasActionError) {
-      shopify.toast.show(fetcher.data.error, { error: true });
+      shopify.toast.show(fetcher.data?.error || "An error occurred", { error: true });
     }
   }, [fetcher.data, hasActionError, shopify]);
 
   const handleCreate = () => {
-    fetcher.submit({ price: selectedPrice }, { method: "POST" });
+    fetcher.submit(
+      { 
+        actionType: "create" 
+      }, 
+      { method: "POST" }
+    );
   };
 
   const onStepComplete = async (id) => {
     try {
+      // Simulate API call
       await new Promise((res) => setTimeout(() => res(), 1000));
-      setItems((prev) => prev.map((item) => (item.id === id ? { ...item, complete: !item.complete } : item)));
+      
+      // Update the specific item's completion status
+      setItems((prev) => prev.map((item) => 
+        item.id === id ? { ...item, complete: !item.complete } : item
+      ));
+      
+      // If it's the product creation step, mark it as complete if product exists
+      if (id === 0 && productExists) {
+        shopify.toast.show("Product setup complete!");
+      }
     } catch (e) {
       console.error(e);
+      shopify.toast.show("Failed to update step", { error: true });
     }
   };
 
@@ -431,7 +681,14 @@ export default function HomeProductCreation() {
       <s-page heading="Tree Planting Product Manager">
         <s-section>
           <s-banner status="critical">
-            <s-paragraph>{loaderData.errorMessage}</s-paragraph>
+            <s-paragraph>Error loading app data: {loaderData.errorMessage}</s-paragraph>
+            <s-button
+              variant="tertiary"
+              onClick={() => window.location.reload()}
+              style={{ marginTop: '8px' }}
+            >
+              Retry
+            </s-button>
           </s-banner>
         </s-section>
       </s-page>
@@ -442,7 +699,12 @@ export default function HomeProductCreation() {
     <s-page heading="Tree Planting Product Manager">
       {/* Primary action */}
       {!productExists && (
-        <s-button slot="primary-action" onClick={handleCreate} {...(isLoading ? { loading: true } : {})}>
+        <s-button 
+          slot="primary-action" 
+          onClick={handleCreate} 
+          loading={isLoading}
+          disabled={isLoading}
+        >
           Create Product
         </s-button>
       )}
@@ -456,51 +718,103 @@ export default function HomeProductCreation() {
             items={items}
           />
         ) : (
-          <s-button onClick={() => setShowGuide(true)}>Show Setup Guide</s-button>
+          <s-button onClick={() => setShowGuide(true)} variant="secondary">
+            Show Setup Guide
+          </s-button>
         )}
 
         {/* Product Creation Section */}
-        <s-section heading="Create Support Tree Planting Product">
+        <s-section heading="Tree Planting Product">
           <s-heading level="h3">Help your customers give back</s-heading>
           
           <s-paragraph>
-            Create a special "Support Tree Planting" product that allows customers
-            to donate towards planting trees.
+            {productExists 
+              ? "Your tree planting donation product is ready! Customers can now add donations to their cart."
+              : "Create a special 'Support Tree Planting' product that allows customers to donate towards planting trees."
+            }
           </s-paragraph>
 
           <s-stack direction="block" gap="base">
-            {/* Price selector */}
-            <label>
-              <s-text>Select Donation Amount</s-text>
-              <s-select
-                value={selectedPrice}
-                onChange={(value) => setSelectedPrice(value)}
-                disabled={productExists}
-                style={{ marginTop: "8px", width: "200px" }}
-              >
-                {PRICE_OPTIONS.map((p) => (
-                  <option key={p.value} value={p.value}>
-                    {p.label}
-                  </option>
-                ))}
-              </s-select>
-            </label>
+            {productExists ? (
+              <>
+                <s-banner status="success">
+                  <s-stack direction="block" gap="small">
+                    <s-paragraph>
+                      <s-icon source="check" tone="success" /> Product is active!
+                    </s-paragraph>
+                    <s-paragraph tone="subdued" variant="bodySm">
+                      {loaderData.donationAmount === "0.00" ? (
+                        "Please set the donation price in Shopify by editing the product."
+                      ) : (
+                        `Current donation amount: $${parseFloat(loaderData.donationAmount || "0.00").toFixed(2)} per tree`
+                      )}
+                    </s-paragraph>
+                    <s-stack direction="inline" gap="small">
+                      <s-button
+                        variant="primary"
+                        onClick={() =>
+                          shopify.intents.invoke?.("edit:shopify/Product", {
+                            value: loaderData.shopifyProduct.id,
+                          })
+                        }
+                      >
+                        Edit Price in Shopify
+                      </s-button>
+                      <s-button
+                        variant="tertiary"
+                        onClick={() =>
+                          shopify.intents.invoke?.("preview:shopify/Product", {
+                            value: loaderData.shopifyProduct.id,
+                          })
+                        }
+                      >
+                        View Product
+                      </s-button>
+                    </s-stack>
+                  </s-stack>
+                </s-banner>
 
-            {productExists && (
+                {/* Product Details */}
+                {loaderData.shopifyProduct && (
+                  <s-box 
+                    padding="base" 
+                    borderWidth="base" 
+                    borderRadius="base" 
+                    background="subdued"
+                  >
+                    <s-stack direction="block" gap="small">
+                      <s-text fontWeight="medium">Product Details:</s-text>
+                      <s-stack direction="block" gap="extra-small">
+                        <s-stack direction="inline" justifyContent="space-between">
+                          <s-text tone="subdued">Title:</s-text>
+                          <s-text>{loaderData.shopifyProduct.title}</s-text>
+                        </s-stack>
+                        <s-stack direction="inline" justifyContent="space-between">
+                          <s-text tone="subdued">Status:</s-text>
+                          <s-badge tone={loaderData.shopifyProduct.status === 'ACTIVE' ? 'success' : 'warning'}>
+                            {loaderData.shopifyProduct.status}
+                          </s-badge>
+                        </s-stack>
+                        <s-stack direction="inline" justifyContent="space-between">
+                          <s-text tone="subdued">Current Price:</s-text>
+                          <s-text>
+                            ${parseFloat(loaderData.donationAmount || "0.00").toFixed(2)}
+                            {loaderData.donationAmount === "0.00" && (
+                              <s-text tone="critical" variant="bodySm"> (Please set price)</s-text>
+                            )}
+                          </s-text>
+                        </s-stack>
+                      </s-stack>
+                    </s-stack>
+                  </s-box>
+                )}
+              </>
+            ) : (
               <s-banner status="info">
                 <s-paragraph>
-                  This product already exists. Delete it in Shopify to recreate.
+                  Click "Create Product" to add a "Support Tree Planting" product to your Shopify store.
+                  You can then set the donation amount directly in Shopify.
                 </s-paragraph>
-                <s-button
-                  variant="tertiary"
-                  onClick={() =>
-                    shopify.intents.invoke?.("edit:shopify/Product", {
-                      value: loaderData.shopifyProduct.id,
-                    })
-                  }
-                >
-                  View Product in Shopify
-                </s-button>
               </s-banner>
             )}
 
@@ -509,46 +823,66 @@ export default function HomeProductCreation() {
                 <s-paragraph>{fetcher.data?.error}</s-paragraph>
               </s-banner>
             )}
+
+            {/* Next Steps */}
+            {productExists && (
+              <>
+                <s-divider />
+                <s-stack direction="block" gap="small">
+                  <s-heading level="h4">Continue Setup</s-heading>
+                  <s-stack direction="inline" gap="base">
+                    <s-button
+                      variant="primary"
+                      onClick={() => navigate('/app/cart-settings')}
+                    >
+                      Configure Cart Settings
+                    </s-button>
+                    <s-button
+                      variant="secondary"
+                      onClick={() => navigate('/app/pricing')}
+                    >
+                      View Pricing Plans
+                    </s-button>
+                  </s-stack>
+                </s-stack>
+              </>
+            )}
           </s-stack>
         </s-section>
 
-        {fetcher.data?.success && (
-          <s-section heading="Product Created">
+        {/* Success Message for New Product */}
+        {fetcher.data?.success && fetcher.data?.product && (
+          <s-section heading="Product Created Successfully">
             <s-banner status="success">
-              <s-paragraph>Product successfully created in Shopify.</s-paragraph>
+              <s-stack direction="block" gap="small">
+                <s-paragraph fontWeight="bold">
+                  ✓ "Support Tree Planting" product has been created in your Shopify store.
+                </s-paragraph>
+                <s-paragraph>
+                  Please set the donation amount by editing the product in Shopify.
+                  The current price is set to $0.00.
+                </s-paragraph>
+              </s-stack>
             </s-banner>
 
-            <s-stack direction="inline" gap="base">
+            <s-stack direction="inline" gap="base" style={{ marginTop: '16px' }}>
               <s-button
-                variant="tertiary"
+                variant="primary"
                 onClick={() =>
                   shopify.intents.invoke?.("edit:shopify/Product", {
                     value: fetcher.data.product.id,
                   })
                 }
               >
-                Edit in Shopify
+                Set Price in Shopify
               </s-button>
-
               <s-button
-                variant="tertiary"
-                onClick={() =>
-                  shopify.intents.invoke?.("preview:shopify/Product", {
-                    value: fetcher.data.product.id,
-                  })
-                }
+                variant="secondary"
+                onClick={() => navigate('/app/cart-settings')}
               >
-                Preview Product
+                Configure Cart Settings
               </s-button>
             </s-stack>
-
-            <s-divider />
-
-            <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-              <pre style={{ margin: 0 }}>
-                <code>{JSON.stringify(fetcher.data.product, null, 2)}</code>
-              </pre>
-            </s-box>
           </s-section>
         )}
       </s-stack>
