@@ -1,0 +1,220 @@
+{% comment %}
+  Tree Planting Donation App Block - Cart Page
+  Version: 1.0.0
+  Description: Adds a donation checkbox to the cart page
+{% endcomment %}
+
+{{ 'tree-planting-donation.css' | asset_url | stylesheet_tag }}
+
+{%- assign donation_enabled = cart.attributes.donation_enabled -%}
+{%- assign donation_amount = cart.attributes.donation_amount | default: '5.00' -%}
+{%- assign product_id = cart.attributes.donation_product_id -%}
+{%- assign product_variant_id = cart.attributes.donation_variant_id -%}
+
+{%- if donation_enabled == 'true' and product_id and product_variant_id -%}
+<div class="tree-planting-donation" id="tree-planting-donation-{{ section.id }}">
+  <label for="donation-checkbox-{{ section.id }}">
+    <input type="checkbox"
+           id="donation-checkbox-{{ section.id }}"
+           name="attributes[add_donation]"
+           value="yes"
+           {% if cart.attributes.add_donation == 'yes' %}checked{% endif %}
+           data-donation-product-id="{{ product_id }}"
+           data-donation-variant-id="{{ product_variant_id }}"
+           data-donation-amount="{{ donation_amount }}">
+    <div class="donation-content">
+      <span class="donation-title">
+        Add <span class="donation-amount">${{ donation_amount }}</span> to plant a tree
+      </span>
+      <span class="donation-description">
+        Support reforestation with your purchase. {{ donation_amount }} plants one tree.
+      </span>
+    </div>
+  </label>
+  <div class="error-message" id="donation-error-{{ section.id }}"></div>
+</div>
+
+<script>
+  (function() {
+    'use strict';
+    
+    const donationCheckbox = document.querySelector('#donation-checkbox-{{ section.id }}');
+    const donationContainer = document.querySelector('#tree-planting-donation-{{ section.id }}');
+    const errorElement = document.querySelector('#donation-error-{{ section.id }}');
+    
+    if (!donationCheckbox) return;
+    
+    // Initialize the cart donation
+    function initDonationCheckbox() {
+      const form = donationCheckbox.closest('form');
+      if (!form) return;
+      
+      // Add event listener for checkbox changes
+      donationCheckbox.addEventListener('change', function(e) {
+        handleDonationChange(e.target.checked);
+      });
+      
+      // Check if donation product is already in cart
+      checkDonationInCart();
+    }
+    
+    // Handle donation checkbox change
+    async function handleDonationChange(isChecked) {
+      try {
+        donationContainer.classList.add('loading');
+        errorElement.textContent = '';
+        
+        const productId = donationCheckbox.dataset.donationProductId;
+        const variantId = donationCheckbox.dataset.donationVariantId;
+        
+        if (isChecked) {
+          // Add donation to cart
+          await addDonationToCart(productId, variantId, 1);
+        } else {
+          // Remove donation from cart
+          await removeDonationFromCart(productId);
+        }
+        
+        // Update cart
+        await updateCart();
+      } catch (error) {
+        console.error('Error handling donation:', error);
+        errorElement.textContent = 'Error updating donation. Please try again.';
+        donationCheckbox.checked = !isChecked; // Revert checkbox state
+      } finally {
+        donationContainer.classList.remove('loading');
+      }
+    }
+    
+    // Add donation product to cart
+    async function addDonationToCart(productId, variantId, quantity) {
+      const formData = {
+        items: [{
+          id: variantId,
+          quantity: quantity,
+          properties: {
+            '_tree_donation': 'true',
+            '_donation_amount': donationCheckbox.dataset.donationAmount
+          }
+        }]
+      };
+      
+      try {
+        const response = await fetch('/cart/add.js', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(formData)
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to add donation to cart');
+        }
+        
+        return await response.json();
+      } catch (error) {
+        throw error;
+      }
+    }
+    
+    // Remove donation product from cart
+    async function removeDonationFromCart(productId) {
+      try {
+        // First get current cart
+        const cartResponse = await fetch('/cart.js');
+        const cart = await cartResponse.json();
+        
+        // Find donation line item
+        const donationItem = cart.items.find(item => 
+          item.product_id == productId || 
+          item.properties && item.properties._tree_donation === 'true'
+        );
+        
+        if (donationItem) {
+          // Remove the donation item
+          const response = await fetch('/cart/change.js', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              id: donationItem.key,
+              quantity: 0
+            })
+          });
+          
+          if (!response.ok) {
+            throw new Error('Failed to remove donation from cart');
+          }
+        }
+      } catch (error) {
+        throw error;
+      }
+    }
+    
+    // Update cart contents
+    async function updateCart() {
+      try {
+        // Use Shopify's native cart update if available
+        if (typeof Shopify === 'object' && Shopify.updateCart) {
+          Shopify.updateCart();
+        } else {
+          // Fallback: reload the page
+          window.location.reload();
+        }
+      } catch (error) {
+        console.error('Error updating cart:', error);
+        window.location.reload();
+      }
+    }
+    
+    // Check if donation is already in cart
+    async function checkDonationInCart() {
+      try {
+        const response = await fetch('/cart.js');
+        const cart = await response.json();
+        
+        const hasDonation = cart.items.some(item => 
+          item.properties && item.properties._tree_donation === 'true'
+        );
+        
+        // Update checkbox state if donation is in cart
+        if (hasDonation !== donationCheckbox.checked) {
+          donationCheckbox.checked = hasDonation;
+        }
+      } catch (error) {
+        console.error('Error checking donation in cart:', error);
+      }
+    }
+    
+    // Initialize when DOM is ready
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initDonationCheckbox);
+    } else {
+      initDonationCheckbox();
+    }
+  })();
+</script>
+{%- else -%}
+  <div class="tree-planting-donation error">
+    <p>Tree planting donation is not configured. Please enable it in the app settings.</p>
+  </div>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Tree Planting Donation",
+  "target": "head",
+  "settings": [
+    {
+      "type": "header",
+      "content": "Tree Planting Donation"
+    },
+    {
+      "type": "paragraph",
+      "content": "This block adds a donation checkbox to support tree planting. Configure settings in the app."
+    }
+  ]
+}
+{% endschema %}

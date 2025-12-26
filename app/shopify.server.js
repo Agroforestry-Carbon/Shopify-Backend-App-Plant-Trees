@@ -144,6 +144,268 @@ export function parseMetafields(metafields) {
   });
   return result;
 }
+
+// shopify.server.js - Add this function
+export async function getShopDomain(admin) {
+  try {
+    const shopResponse = await admin.graphql(`
+      #graphql
+      query {
+        shop {
+          myshopifyDomain
+        }
+      }
+    `);
+    
+    const shopData = await shopResponse.json();
+    return shopData?.data?.shop?.myshopifyDomain || null;
+  } catch (error) {
+    console.error('Error fetching shop domain:', error);
+    return null;
+  }
+}
+// Helper to get specific metafield value
+
+// shopify.server.js - Add these functions after the parseMetafields function
+
+// Helper to update cart attributes
+export async function updateCartAttributes(admin, session) {
+  try {
+    // Get app metafields
+    const metafields = await getAppMetafields(admin);
+    const parsedFields = parseMetafields(metafields);
+    
+    // Get donation product info
+    const productId = parsedFields.product_id;
+    const donationAmount = parsedFields.donation_amount || "5.00";
+    const cartEnabled = parsedFields.cart_enabled === 'true' || parsedFields.cart_enabled === true;
+    
+    if (!productId || !cartEnabled) {
+      return null;
+    }
+    
+    // Get product variant
+    const productResponse = await admin.graphql(
+      `#graphql
+      query GetProduct($id: ID!) {
+        product(id: $id) {
+          variants(first: 1) {
+            edges {
+              node {
+                id
+                price
+              }
+            }
+          }
+        }
+      }`,
+      { variables: { id: productId } }
+    );
+    
+    const productJson = await productResponse.json();
+    const variantId = productJson.data?.product?.variants?.edges[0]?.node?.id;
+    
+    // Return cart attributes configuration
+    return {
+      donation_enabled: cartEnabled.toString(),
+      donation_amount: donationAmount,
+      donation_product_id: productId,
+      donation_variant_id: variantId
+    };
+  } catch (error) {
+    console.error('Error getting cart attributes:', error);
+    return null;
+  }
+}
+
+// Function to sync cart attributes to app metafields for theme app extension
+export async function syncCartAttributes(admin) {
+  try {
+    const metafields = await getAppMetafields(admin);
+    const parsedFields = parseMetafields(metafields);
+    
+    // Get donation product info
+    const productId = parsedFields.product_id;
+    const donationAmount = parsedFields.donation_amount || "5.00";
+    const cartEnabled = parsedFields.cart_enabled === 'true' || parsedFields.cart_enabled === true;
+    
+    if (!productId || !cartEnabled) {
+      return { success: false, error: "Product not created or cart not enabled" };
+    }
+    
+    // Get product variant
+    const productResponse = await admin.graphql(
+      `#graphql
+      query GetProduct($id: ID!) {
+        product(id: $id) {
+          variants(first: 1) {
+            edges {
+              node {
+                id
+                price
+              }
+            }
+          }
+        }
+      }`,
+      { variables: { id: productId } }
+    );
+    
+    const productJson = await productResponse.json();
+    const variantId = productJson.data?.product?.variants?.edges[0]?.node?.id;
+    
+    if (!variantId) {
+      return { success: false, error: "Product variant not found" };
+    }
+    
+    // Store cart attributes in app metafields for theme app extension
+    await setAppMetafield(admin, {
+      key: 'cart_attributes',
+      type: 'json',
+      value: {
+        donation_enabled: cartEnabled.toString(),
+        donation_amount: donationAmount,
+        donation_product_id: productId,
+        donation_variant_id: variantId,
+        last_updated: new Date().toISOString()
+      }
+    });
+    
+    return { 
+      success: true, 
+      cartAttributes: {
+        donation_enabled: cartEnabled.toString(),
+        donation_amount: donationAmount,
+        donation_product_id: productId,
+        donation_variant_id: variantId
+      }
+    };
+  } catch (error) {
+    console.error('Error syncing cart attributes:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Create app proxy endpoint for theme app extension
+export async function createAppProxyEndpoint(admin, session) {
+  try {
+    const { shop } = session;
+    
+    // Get app metafields
+    const metafields = await getAppMetafields(admin);
+    const parsedFields = parseMetafields(metafields);
+    
+    // Get donation settings
+    const productId = parsedFields.product_id;
+    const donationAmount = parsedFields.donation_amount || "5.00";
+    const cartEnabled = parsedFields.cart_enabled === 'true' || parsedFields.cart_enabled === true;
+    
+    if (!productId || !cartEnabled) {
+      return {
+        enabled: false,
+        message: "Tree planting donation is not configured. Please enable it in the app settings."
+      };
+    }
+    
+    // Get product variant
+    const productResponse = await admin.graphql(
+      `#graphql
+      query GetProduct($id: ID!) {
+        product(id: $id) {
+          title
+          variants(first: 1) {
+            edges {
+              node {
+                id
+                price
+              }
+            }
+          }
+        }
+      }`,
+      { variables: { id: productId } }
+    );
+    
+    const productJson = await productResponse.json();
+    const variantId = productJson.data?.product?.variants?.edges[0]?.node?.id;
+    
+    return {
+      enabled: true,
+      shop: shop,
+      donation_amount: donationAmount,
+      product_id: productId,
+      variant_id: variantId,
+      product_title: productJson.data?.product?.title || "Support Tree Planting"
+    };
+  } catch (error) {
+    console.error('Error creating app proxy endpoint:', error);
+    return {
+      enabled: false,
+      error: error.message
+    };
+  }
+}
+
+
+export function getMetafieldValue(metafields, key) {
+  const field = metafields.find(f => f.key === key);
+  if (!field) return null;
+  
+  try {
+    return field.type === 'json' ? JSON.parse(field.value) : field.value;
+  } catch {
+    return field.value;
+  }
+}
+
+// shopify.server.js - Add this function
+export async function syncCartAttributes(admin, session) {
+  try {
+    // Get app metafields
+    const metafields = await getAppMetafields(admin);
+    const parsedFields = parseMetafields(metafields);
+    
+    // Get donation product info
+    const productId = parsedFields.product_id;
+    const donationAmount = parsedFields.donation_amount || "5.00";
+    const cartEnabled = parsedFields.cart_enabled === 'true' || parsedFields.cart_enabled === true;
+    
+    if (!productId) {
+      return null;
+    }
+    
+    // Get product variant
+    const productResponse = await admin.graphql(
+      `#graphql
+      query GetProduct($id: ID!) {
+        product(id: $id) {
+          variants(first: 1) {
+            edges {
+              node {
+                id
+              }
+            }
+          }
+        }
+      }`,
+      { variables: { id: productId } }
+    );
+    
+    const productJson = await productResponse.json();
+    const variantId = productJson.data?.product?.variants?.edges[0]?.node?.id;
+    
+    // Return cart attributes configuration
+    return {
+      donation_enabled: cartEnabled.toString(),
+      donation_amount: donationAmount,
+      donation_product_id: productId,
+      donation_variant_id: variantId
+    };
+  } catch (error) {
+    console.error('Error syncing cart attributes:', error);
+    return null;
+  }
+}
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
   apiSecretKey: process.env.SHOPIFY_API_SECRET || "",

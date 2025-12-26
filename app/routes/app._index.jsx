@@ -1,6 +1,6 @@
 // app/routes/app._index.jsx
 import { useState, useEffect } from "react";
-import { useFetcher, useLoaderData, Link, useNavigate } from "react-router";
+import { useFetcher, useLoaderData, useNavigate } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate, getAppMetafields, setAppMetafield, parseMetafields } from "../shopify.server";
 
@@ -255,32 +255,416 @@ const SetupItem = ({
   );
 };
 
-// Setup items data
-const SETUP_ITEMS = [
-  {
-    id: 0,
-    title: "Create Tree Planting Product",
-    description: "Set up a special product that allows customers to donate towards planting trees.",
-    complete: false,
-  },
-  {
-    id: 1,
-    title: "Configure Cart Settings",
-    description: "Enable the tree planting donation checkbox in the cart for your customers.",
-    complete: false,
-  },
-  {
-    id: 2,
-    title: "Set Up Pricing Plan",
-    description: "Choose a pricing plan that fits your store's needs and volume.",
-    complete: false,
-  },
-];
+// Cart Toggle Component
+const CartToggle = ({ enabled, onChange, disabled, donationAmount }) => {
+  return (
+    <s-box padding="base" borderWidth="base" borderRadius="base" background="surface">
+      <s-stack direction="block" gap="300">
+        <s-stack direction="inline" justifyContent="space-between" alignItems="center">
+          <div>
+            <s-heading level="h4">Cart Donation Checkbox</s-heading>
+            <s-text tone="subdued" variant="bodySm">
+              Enable the donation checkbox in cart page and cart drawer
+            </s-text>
+          </div>
+          <s-badge 
+            tone={enabled ? "success" : "subdued"}
+            icon={enabled ? "check" : "cancel"}
+          >
+            {enabled ? 'Enabled' : 'Disabled'}
+          </s-badge>
+        </s-stack>
+
+        <s-divider />
+
+        <s-stack direction="inline" justifyContent="space-between" alignItems="center">
+          <div>
+            <s-text fontWeight="medium">Status</s-text>
+            <s-text tone="subdued" variant="bodySm">
+              {enabled 
+                ? 'Customers can add donations to cart' 
+                : 'Donation checkbox is hidden'
+              }
+            </s-text>
+          </div>
+          
+          <button
+            onClick={onChange}
+            disabled={disabled}
+            style={{
+              width: '60px',
+              height: '30px',
+              borderRadius: '15px',
+              border: 'none',
+              position: 'relative',
+              cursor: disabled ? 'not-allowed' : 'pointer',
+              transition: 'all 0.3s ease',
+              backgroundColor: enabled ? 'var(--p-color-bg-success)' : 'var(--p-color-border)',
+              padding: '3px',
+              outline: 'none',
+              opacity: disabled ? 0.5 : 1
+            }}
+            aria-label={enabled ? 'Disable donation option' : 'Enable donation option'}
+            role='switch'
+            type='button'
+            aria-checked={enabled}
+          >
+            <div
+              style={{
+                width: '24px',
+                height: '24px',
+                borderRadius: '50%',
+                backgroundColor: 'white',
+                transition: 'transform 0.3s ease',
+                transform: enabled ? 'translateX(30px)' : 'translateX(0)',
+                boxShadow: 'var(--p-shadow-sm)'
+              }}
+            />
+          </button>
+        </s-stack>
+
+        {/* Preview */}
+        {enabled && (
+          <>
+            <s-divider />
+            <div style={{
+              padding: '16px',
+              backgroundColor: 'var(--p-color-bg-success-subdued)',
+              borderRadius: 'var(--p-border-radius-300)',
+              border: '1px solid var(--p-color-border-success)',
+            }}>
+              <s-stack direction="inline" gap="200" alignItems="center">
+                <div style={{
+                  width: '20px',
+                  height: '20px',
+                  borderRadius: 'var(--p-border-radius-100)',
+                  border: '2px solid var(--p-color-border-success)',
+                  backgroundColor: 'var(--p-color-bg-success)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+                    <path d="M11.6666 3.5L5.24998 9.91667L2.33331 7" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </div>
+                <s-stack direction="block" gap="50">
+                  <s-text fontWeight="medium">
+                    Add ${parseFloat(donationAmount || "0.00").toFixed(2)} to plant a tree
+                  </s-text>
+                  <s-text tone="subdued" variant="bodySm">
+                    Support reforestation with your purchase
+                  </s-text>
+                </s-stack>
+              </s-stack>
+            </div>
+          </>
+        )}
+      </s-stack>
+    </s-box>
+  );
+};
+
+// Price Modal Component
+const PriceModal = ({ isOpen, onClose, onSubmit, loading }) => {
+  const [selectedPrice, setSelectedPrice] = useState('5.00');
+  
+  const priceOptions = [
+    { value: '5.00', label: '$5.00' },
+    { value: '10.00', label: '$10.00' },
+    { value: '15.00', label: '$15.00' },
+    { value: '20.00', label: '$20.00' },
+    { value: '25.00', label: '$25.00' },
+  ];
+
+  if (!isOpen) return null;
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSubmit(selectedPrice);
+  };
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000,
+    }}>
+      <div style={{
+        backgroundColor: 'white',
+        borderRadius: '8px',
+        padding: '24px',
+        width: '90%',
+        maxWidth: '400px',
+        maxHeight: '90vh',
+        overflow: 'auto',
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+      }}>
+        <s-stack direction="block" gap="400">
+          <s-stack direction="inline" justifyContent="space-between" alignItems="center">
+            <s-heading level="h2">Select Donation Price</s-heading>
+            <s-button
+              variant="tertiary"
+              onClick={onClose}
+              icon="cancel"
+              accessibilityLabel="Close modal"
+            />
+          </s-stack>
+
+          <form onSubmit={handleSubmit}>
+            <s-stack direction="block" gap="400">
+              <s-text tone="subdued">
+                Choose the amount customers will donate for each tree planted. This will be the price of the "Support Tree Planting" product.
+              </s-text>
+
+              <div style={{ margin: '16px 0' }}>
+                <s-text fontWeight="medium" variant="bodyMd">Select Amount:</s-text>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, 1fr)',
+                  gap: '12px',
+                  marginTop: '12px',
+                }}>
+                  {priceOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setSelectedPrice(option.value)}
+                      style={{
+                        padding: '16px',
+                        borderRadius: '8px',
+                        border: selectedPrice === option.value 
+                          ? '2px solid #008060' 
+                          : '1px solid #E1E3E5',
+                        backgroundColor: selectedPrice === option.value 
+                          ? '#F0F9F7' 
+                          : 'white',
+                        cursor: 'pointer',
+                        textAlign: 'center',
+                        transition: 'all 0.2s',
+                        fontSize: '16px',
+                        fontWeight: selectedPrice === option.value ? '600' : '400',
+                        color: selectedPrice === option.value ? '#008060' : '#202223',
+                        outline: 'none',
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{
+                padding: '16px',
+                backgroundColor: '#F6F6F7',
+                borderRadius: '8px',
+                margin: '16px 0',
+              }}>
+                <s-stack direction="inline" justifyContent="space-between" alignItems="center">
+                  <s-text fontWeight="medium">Selected Price:</s-text>
+                  <s-text variant="headingLg" fontWeight="bold">
+                    ${parseFloat(selectedPrice).toFixed(2)}
+                  </s-text>
+                </s-stack>
+                <s-text tone="subdued" variant="bodySm" style={{ marginTop: '8px' }}>
+                  This price will be set for the "Support Tree Planting" product
+                </s-text>
+              </div>
+
+              <s-stack direction="inline" gap="200" justifyContent="end">
+                <s-button
+                  type="button"
+                  variant="tertiary"
+                  onClick={onClose}
+                  disabled={loading}
+                >
+                  Cancel
+                </s-button>
+                <s-button
+                  type="submit"
+                  variant="primary"
+                  loading={loading}
+                >
+                  Create Product
+                </s-button>
+              </s-stack>
+            </s-stack>
+          </form>
+        </s-stack>
+      </div>
+    </div>
+  );
+};
+
+// DeepLinkButton Component for Theme App Extension
+const DeepLinkButton = ({ shopDomain, apiKey, disabled = false, productExists, cartEnabled, donationAmount, productId, variantId }) => {
+  const navigate = useNavigate();
+  const [isLoading, setIsLoading] = useState(false);
+  const [isConfiguring, setIsConfiguring] = useState(false);
+  
+  // Define app block handle - this should match your theme app extension handle
+  const appBlockHandle = 'tree-planting-donation';
+  
+  const handleConfigureThemeExtension = async () => {
+    if (!shopDomain || !apiKey || !productId || !variantId) {
+      console.error('Missing required configuration');
+      return;
+    }
+    
+    setIsConfiguring(true);
+    
+    try {
+      // First, sync the configuration
+      await syncThemeExtensionConfig();
+      
+      // Then open theme editor
+      const deeplinkUrl = `https://${shopDomain}/admin/themes/current/editor?context=apps&template=cart&activateAppId=${apiKey}/${appBlockHandle}`;
+      
+      // Open in new tab
+      window.open(deeplinkUrl, '_blank', 'noopener,noreferrer');
+      
+    } catch (error) {
+      console.error('Error configuring theme extension:', error);
+    } finally {
+      setIsConfiguring(false);
+    }
+  };
+  
+  const syncThemeExtensionConfig = async () => {
+    // This would call an API endpoint to sync configuration
+    // For now, we'll assume configuration is already synced via the action
+    console.log('Theme extension configuration synced');
+  };
+  
+  const handleViewInstructions = () => {
+    // Navigate to instructions page
+    navigate('/app/instructions');
+  };
+  
+  if (!productExists || !cartEnabled) {
+    return null;
+  }
+  
+  return (
+    <s-box padding="base" borderWidth="base" borderRadius="base" background="surface">
+      <s-stack direction="block" gap="400">
+        <s-stack direction="inline" justifyContent="space-between" alignItems="center">
+          <div>
+            <s-heading level="h4">Theme App Extension</s-heading>
+            <s-text tone="subdued" variant="bodySm">
+              Add donation checkbox directly to your theme
+            </s-text>
+          </div>
+          <s-badge tone="success" icon="theme">
+            Recommended
+          </s-badge>
+        </s-stack>
+        
+        <s-divider />
+        
+        <s-stack direction="block" gap="200">
+          <s-text>
+            Use our theme app extension to add the donation checkbox directly to your cart page or cart drawer for better integration.
+          </s-text>
+          
+          <s-text tone="subdued" variant="bodySm">
+            This provides a more seamless experience than the app embed block and allows for better customization.
+          </s-text>
+          
+          {productId && variantId && (
+            <s-banner status="success">
+              <s-stack direction="block" gap="small">
+                <s-text fontWeight="medium">Theme Extension Ready!</s-text>
+                <s-text variant="bodySm">
+                  Configuration synced: ${donationAmount} donation, product ID: {productId.substring(productId.lastIndexOf('/') + 1)}
+                </s-text>
+              </s-stack>
+            </s-banner>
+          )}
+        </s-stack>
+        
+        <s-stack direction="inline" gap="200" justifyContent="space-between" alignItems="center">
+          <s-button
+            variant="primary"
+            onClick={handleConfigureThemeExtension}
+            loading={isConfiguring}
+            disabled={disabled || !shopDomain || !apiKey || !productId || !variantId}
+            icon="theme"
+          >
+            {isConfiguring ? 'Configuring...' : 'Add to Theme'}
+          </s-button>
+          
+          <s-button
+            variant="secondary"
+            onClick={() => {
+              if (shopDomain && apiKey) {
+                const deeplinkUrl = `https://${shopDomain}/admin/themes/current/editor?context=apps&template=index&activateAppId=${apiKey}/${appBlockHandle}`;
+                window.open(deeplinkUrl, '_blank', 'noopener,noreferrer');
+              }
+            }}
+            disabled={disabled || !shopDomain || !apiKey}
+            icon="cart"
+          >
+            Add to Cart Drawer
+          </s-button>
+        </s-stack>
+        
+        <s-stack direction="inline" gap="200" justifyContent="end">
+          <s-button
+            variant="tertiary"
+            onClick={handleViewInstructions}
+            icon="help"
+          >
+            View Instructions
+          </s-button>
+        </s-stack>
+        
+        {(!shopDomain || !apiKey) && (
+          <s-banner status="warning">
+            <s-text variant="bodySm">
+              Unable to generate deep link. Please refresh the page or contact support.
+            </s-text>
+          </s-banner>
+        )}
+        
+        {(!productId || !variantId) && (
+          <s-banner status="critical">
+            <s-text variant="bodySm">
+              Product configuration incomplete. Please refresh the page or contact support.
+            </s-text>
+          </s-banner>
+        )}
+      </s-stack>
+    </s-box>
+  );
+};
 
 // Loader function
 export const loader = async ({ request }) => {
   try {
     const { admin } = await authenticate.admin(request);
+
+    // Get shop domain
+    const shopResponse = await admin.graphql(
+      `#graphql
+      query {
+        shop {
+          myshopifyDomain
+        }
+      }`
+    );
+    const shopJson = await shopResponse.json();
+    const shopDomain = shopJson.data?.shop?.myshopifyDomain || null;
+    
+    // Get API key from environment
+    const apiKey = process.env.SHOPIFY_API_KEY || "";
 
     // Get all app metafields
     const metafields = await getAppMetafields(admin);
@@ -291,6 +675,7 @@ export const loader = async ({ request }) => {
     let shopifyProduct = null;
     let exists = false;
     let productId = parsedFields.product_id;
+    let variantId = null;
     
     // Check if product exists in Shopify
     if (productId) {
@@ -322,6 +707,7 @@ export const loader = async ({ request }) => {
         if (responseJson.data?.product) {
           shopifyProduct = responseJson.data.product;
           exists = true;
+          variantId = shopifyProduct.variants.edges[0]?.node?.id || null;
           
           // Update donation amount from product price
           const currentPrice = shopifyProduct.variants.edges[0]?.node?.price || "0.00";
@@ -379,6 +765,7 @@ export const loader = async ({ request }) => {
         if (products && products.length > 0) {
           shopifyProduct = products[0].node;
           exists = true;
+          variantId = shopifyProduct.variants.edges[0]?.node?.id || null;
           
           // Store product ID in metafields
           await setAppMetafield(admin, {
@@ -404,14 +791,33 @@ export const loader = async ({ request }) => {
     // Check cart enabled status
     const cartEnabled = parsedFields.cart_enabled === 'true' || parsedFields.cart_enabled === true;
     
+    // Store theme extension configuration
+    if (exists && cartEnabled && productId && variantId) {
+      await setAppMetafield(admin, {
+        key: 'theme_extension_config',
+        type: 'json',
+        value: {
+          enabled: true,
+          donation_amount: parsedFields.donation_amount || "5.00",
+          product_id: productId,
+          variant_id: variantId,
+          last_updated: new Date().toISOString()
+        }
+      });
+    }
+    
     return { 
       shopifyProduct, 
       exists, 
       hasError: false,
-      donationAmount: parsedFields.donation_amount || "0.00",
+      donationAmount: parsedFields.donation_amount || "5.00",
       cartEnabled: cartEnabled,
       productData: parsedFields.product_data || null,
-      metafields: parsedFields
+      metafields: parsedFields,
+      shopDomain,
+      apiKey,
+      productId: productId,
+      variantId: variantId
     };
   } catch (error) {
     console.error('Loader error:', error);
@@ -420,18 +826,24 @@ export const loader = async ({ request }) => {
       exists: false,
       hasError: true,
       errorMessage: error.message || 'Failed to load app data',
-      donationAmount: "0.00",
+      donationAmount: "5.00",
       cartEnabled: false,
+      shopDomain: null,
+      apiKey: process.env.SHOPIFY_API_KEY || "",
+      productId: null,
+      variantId: null
     };
   }
 };
 
-// Action function - Simplified: No price selection needed
+// Action function - Fixed GraphQL mutations
 export const action = async ({ request }) => {
   try {
     const { admin } = await authenticate.admin(request);
     const formData = await request.formData();
-    const actionType = formData.get("actionType") || "create";
+    const actionType = formData.get("actionType");
+    const price = formData.get("price");
+    const cartEnabled = formData.get("cartEnabled");
 
     if (actionType === "create") {
       // Check if product already exists in metafields
@@ -464,11 +876,11 @@ export const action = async ({ request }) => {
         }
       }
 
-      // Create product with $0.00 price - merchant will set price in Shopify
+      // Create product with title only first - using the correct mutation format from your working code
       const productResponse = await admin.graphql(
         `#graphql
-        mutation createTreePlantingProduct($input: ProductInput!) {
-          productCreate(input: $input) {
+        mutation createTreePlantingProduct($product: ProductCreateInput!) {
+          productCreate(product: $product) {
             product {
               id
               title
@@ -491,7 +903,7 @@ export const action = async ({ request }) => {
         }`,
         {
           variables: {
-            input: {
+            product: {
               title: "Support Tree Planting",
               productType: "Donation",
               vendor: "Tree Planting",
@@ -516,7 +928,48 @@ export const action = async ({ request }) => {
 
       const product = productJson.data.productCreate.product;
       const variantId = product.variants.edges[0]?.node?.id;
-      const currentPrice = product.variants.edges[0]?.node?.price || "0.00";
+      
+      // Update variant price using productVariantsBulkUpdate
+      if (price && variantId) {
+        const variantResponse = await admin.graphql(
+          `#graphql
+          mutation updateVariantPrice($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+            productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+              productVariants {
+                id
+                price
+              }
+              userErrors {
+                field
+                message
+              }
+            }
+          }`,
+          {
+            variables: {
+              productId: product.id,
+              variants: [
+                {
+                  id: variantId,
+                  price: price
+                }
+              ]
+            }
+          }
+        );
+        
+        const variantJson = await variantResponse.json();
+        console.log('Variant update response:', variantJson);
+        
+        if (variantJson.data.productVariantsBulkUpdate.userErrors?.length > 0) {
+          return {
+            success: false,
+            error: variantJson.data.productVariantsBulkUpdate.userErrors[0].message
+          };
+        }
+      }
+
+      const currentPrice = price || "0.00";
 
       // Store in app metafields
       await setAppMetafield(admin, {
@@ -552,9 +1005,91 @@ export const action = async ({ request }) => {
         value: "false",
       });
 
+      // Store theme extension configuration
+      await setAppMetafield(admin, {
+        key: 'theme_extension_config',
+        type: 'json',
+        value: {
+          enabled: false, // Not enabled until cart is enabled
+          donation_amount: currentPrice,
+          product_id: product.id,
+          variant_id: variantId,
+          last_updated: new Date().toISOString()
+        }
+      });
+
       return {
         product,
+        variantId,
         success: true,
+      };
+    } else if (actionType === "updateCart") {
+      // Update cart settings
+      await setAppMetafield(admin, {
+        key: 'cart_enabled',
+        type: 'boolean',
+        value: cartEnabled,
+      });
+
+      // Get product info to update theme extension config
+      const metafields = await getAppMetafields(admin);
+      const parsedFields = parseMetafields(metafields);
+      
+      const productId = parsedFields.product_id;
+      const donationAmount = parsedFields.donation_amount || "5.00";
+      
+      if (productId && cartEnabled === 'true') {
+        // Get product variant
+        const productResponse = await admin.graphql(
+          `#graphql
+          query GetProduct($id: ID!) {
+            product(id: $id) {
+              variants(first: 1) {
+                edges {
+                  node {
+                    id
+                  }
+                }
+              }
+            }
+          }`,
+          { variables: { id: productId } }
+        );
+        
+        const productJson = await productResponse.json();
+        const variantId = productJson.data?.product?.variants?.edges[0]?.node?.id;
+        
+        if (variantId) {
+          // Update theme extension configuration
+          await setAppMetafield(admin, {
+            key: 'theme_extension_config',
+            type: 'json',
+            value: {
+              enabled: true,
+              donation_amount: donationAmount,
+              product_id: productId,
+              variant_id: variantId,
+              last_updated: new Date().toISOString()
+            }
+          });
+          
+          // Also store as separate metafields for easy access
+          await setAppMetafield(admin, {
+            key: 'cart_attributes',
+            type: 'json',
+            value: {
+              donation_enabled: 'true',
+              donation_amount: donationAmount,
+              donation_product_id: productId,
+              donation_variant_id: variantId
+            }
+          });
+        }
+      }
+
+      return {
+        success: true,
+        cartEnabled: cartEnabled === 'true'
       };
     }
 
@@ -563,12 +1098,12 @@ export const action = async ({ request }) => {
     console.error('Action error:', error);
     return { 
       success: false, 
-      error: error.message || "Failed to create product. Please try again." 
+      error: error.message || "An error occurred. Please try again." 
     };
   }
 };
 
-// Main Component - Simplified: No price dropdown
+// Main Component
 export default function HomeProductCreation() {
   const fetcher = useFetcher();
   const loaderData = useLoaderData();
@@ -577,11 +1112,41 @@ export default function HomeProductCreation() {
 
   const [productExists, setProductExists] = useState(loaderData.exists);
   const [showGuide, setShowGuide] = useState(true);
-  const [items, setItems] = useState(SETUP_ITEMS);
+  const [showPriceModal, setShowPriceModal] = useState(false);
+  const [cartEnabled, setCartEnabled] = useState(loaderData.cartEnabled);
+  const [isUpdatingCart, setIsUpdatingCart] = useState(false);
+  const [productId, setProductId] = useState(loaderData.productId);
+  const [variantId, setVariantId] = useState(loaderData.variantId);
+  const [items, setItems] = useState([
+    {
+      id: 0,
+      title: "Create Tree Planting Product",
+      description: "Set up a special product that allows customers to donate towards planting trees.",
+      complete: false,
+    },
+    {
+      id: 1,
+      title: "Enable Cart Donation Checkbox",
+      description: "Allow customers to add donations to their cart.",
+      complete: false,
+    },
+    {
+      id: 2,
+      title: "Add to Theme (Optional)",
+      description: "Use theme app extension for better integration with your theme.",
+      complete: false,
+    },
+    {
+      id: 3,
+      title: "Set Up Pricing Plan",
+      description: "Choose a pricing plan that fits your store's needs and volume.",
+      complete: false,
+    },
+  ]);
 
   // Update setup items based on actual state
   useEffect(() => {
-    const updatedItems = SETUP_ITEMS.map(item => {
+    const updatedItems = items.map(item => {
       if (item.id === 0) {
         return { 
           ...item, 
@@ -589,14 +1154,7 @@ export default function HomeProductCreation() {
           primaryButton: productExists ? undefined : {
             content: "Create Product",
             props: {
-              onClick: () => {
-                fetcher.submit(
-                  { 
-                    actionType: "create" 
-                  }, 
-                  { method: "POST" }
-                );
-              },
+              onClick: () => setShowPriceModal(true),
               disabled: fetcher.state === 'submitting'
             }
           }
@@ -605,19 +1163,45 @@ export default function HomeProductCreation() {
       if (item.id === 1) {
         return { 
           ...item, 
-          complete: loaderData.cartEnabled || false,
-          primaryButton: productExists ? {
-            content: "Configure",
-            props: {
-              onClick: () => navigate('/app/cart-settings'),
-            }
-          } : undefined,
+          complete: cartEnabled || false,
           description: !productExists 
-            ? "Please create the Tree Planting product first to configure cart settings."
-            : "Enable the tree planting donation checkbox in the cart for your customers."
+            ? "Please create the Tree Planting product first to enable cart donations."
+            : "Enable the tree planting donation checkbox in the cart for your customers.",
+          primaryButton: productExists && !cartEnabled ? {
+            content: "Enable Now",
+            props: {
+              onClick: () => handleToggleCart(true),
+            }
+          } : undefined
         };
       }
       if (item.id === 2) {
+        return { 
+          ...item,
+          description: productExists && cartEnabled 
+            ? "Add the donation checkbox directly to your theme using our theme app extension for better integration."
+            : "Complete steps 1 and 2 first to enable theme app extension.",
+          complete: false,
+          primaryButton: productExists && cartEnabled ? {
+            content: "Add to Theme",
+            props: {
+              onClick: () => {
+                if (loaderData.shopDomain && loaderData.apiKey && productId && variantId) {
+                  const deeplinkUrl = `https://${loaderData.shopDomain}/admin/themes/current/editor?context=apps&template=cart&activateAppId=${loaderData.apiKey}/tree-planting-donation`;
+                  window.open(deeplinkUrl, '_blank', 'noopener,noreferrer');
+                }
+              }
+            }
+          } : undefined,
+          secondaryButton: productExists && cartEnabled ? {
+            content: "View Instructions",
+            props: {
+              onClick: () => navigate('/app/instructions'),
+            }
+          } : undefined
+        };
+      }
+      if (item.id === 3) {
         return { 
           ...item,
           primaryButton: {
@@ -631,7 +1215,7 @@ export default function HomeProductCreation() {
       return item;
     });
     setItems(updatedItems);
-  }, [productExists, loaderData.cartEnabled, fetcher.state, navigate]);
+  }, [productExists, cartEnabled, fetcher.state, navigate, loaderData.shopDomain, loaderData.apiKey, productId, variantId]);
 
   const isLoading = ["loading", "submitting"].includes(fetcher.state) && fetcher.formMethod === "POST";
   const hasActionError = fetcher.data?.success === false;
@@ -640,17 +1224,52 @@ export default function HomeProductCreation() {
     if (fetcher.data?.success) {
       if (fetcher.data.product) {
         setProductExists(true);
+        setProductId(fetcher.data.product.id);
+        setVariantId(fetcher.data.variantId);
         shopify.toast.show("Support Tree Planting product created successfully!");
+        setShowPriceModal(false);
+      }
+      if (fetcher.data.cartEnabled !== undefined) {
+        setCartEnabled(fetcher.data.cartEnabled);
+        setIsUpdatingCart(false);
+        shopify.toast.show(
+          `Cart donation ${fetcher.data.cartEnabled ? 'enabled' : 'disabled'} successfully!`
+        );
+        
+        // If cart was enabled, update theme extension config
+        if (fetcher.data.cartEnabled) {
+          shopify.toast.show("Theme app extension configuration updated!");
+        }
       }
     } else if (hasActionError) {
       shopify.toast.show(fetcher.data?.error || "An error occurred", { error: true });
+      setIsUpdatingCart(false);
     }
   }, [fetcher.data, hasActionError, shopify]);
 
-  const handleCreate = () => {
+  useEffect(() => {
+    setProductExists(loaderData.exists);
+    setCartEnabled(loaderData.cartEnabled);
+    setProductId(loaderData.productId);
+    setVariantId(loaderData.variantId);
+  }, [loaderData]);
+
+  const handleCreateProduct = (price) => {
     fetcher.submit(
       { 
-        actionType: "create" 
+        actionType: "create",
+        price: price
+      }, 
+      { method: "POST" }
+    );
+  };
+
+  const handleToggleCart = (enabled) => {
+    setIsUpdatingCart(true);
+    fetcher.submit(
+      { 
+        actionType: "updateCart",
+        cartEnabled: enabled.toString()
       }, 
       { method: "POST" }
     );
@@ -666,9 +1285,16 @@ export default function HomeProductCreation() {
         item.id === id ? { ...item, complete: !item.complete } : item
       ));
       
-      // If it's the product creation step, mark it as complete if product exists
-      if (id === 0 && productExists) {
-        shopify.toast.show("Product setup complete!");
+      // If it's the cart settings step, toggle the cart
+      if (id === 1 && productExists) {
+        handleToggleCart(!cartEnabled);
+      }
+      // If it's the theme extension step
+      else if (id === 2 && productExists && cartEnabled) {
+        if (loaderData.shopDomain && loaderData.apiKey && productId && variantId) {
+          const deeplinkUrl = `https://${loaderData.shopDomain}/admin/themes/current/editor?context=apps&template=cart&activateAppId=${loaderData.apiKey}/tree-planting-donation`;
+          window.open(deeplinkUrl, '_blank', 'noopener,noreferrer');
+        }
       }
     } catch (e) {
       console.error(e);
@@ -697,11 +1323,19 @@ export default function HomeProductCreation() {
 
   return (
     <s-page heading="Tree Planting Product Manager">
+      {/* Price Selection Modal */}
+      <PriceModal
+        isOpen={showPriceModal}
+        onClose={() => setShowPriceModal(false)}
+        onSubmit={handleCreateProduct}
+        loading={isLoading}
+      />
+
       {/* Primary action */}
       {!productExists && (
         <s-button 
           slot="primary-action" 
-          onClick={handleCreate} 
+          onClick={() => setShowPriceModal(true)} 
           loading={isLoading}
           disabled={isLoading}
         >
@@ -743,11 +1377,7 @@ export default function HomeProductCreation() {
                       <s-icon source="check" tone="success" /> Product is active!
                     </s-paragraph>
                     <s-paragraph tone="subdued" variant="bodySm">
-                      {loaderData.donationAmount === "0.00" ? (
-                        "Please set the donation price in Shopify by editing the product."
-                      ) : (
-                        `Current donation amount: $${parseFloat(loaderData.donationAmount || "0.00").toFixed(2)} per tree`
-                      )}
+                      Current donation amount: ${parseFloat(loaderData.donationAmount || "0.00").toFixed(2)} per tree
                     </s-paragraph>
                     <s-stack direction="inline" gap="small">
                       <s-button
@@ -758,7 +1388,7 @@ export default function HomeProductCreation() {
                           })
                         }
                       >
-                        Edit Price in Shopify
+                        Edit Product in Shopify
                       </s-button>
                       <s-button
                         variant="tertiary"
@@ -796,24 +1426,52 @@ export default function HomeProductCreation() {
                           </s-badge>
                         </s-stack>
                         <s-stack direction="inline" justifyContent="space-between">
-                          <s-text tone="subdued">Current Price:</s-text>
+                          <s-text tone="subdued">Donation Amount:</s-text>
                           <s-text>
                             ${parseFloat(loaderData.donationAmount || "0.00").toFixed(2)}
-                            {loaderData.donationAmount === "0.00" && (
-                              <s-text tone="critical" variant="bodySm"> (Please set price)</s-text>
-                            )}
                           </s-text>
                         </s-stack>
+                        {productId && (
+                          <s-stack direction="inline" justifyContent="space-between">
+                            <s-text tone="subdued">Product ID:</s-text>
+                            <s-text variant="bodySm">{productId.substring(productId.lastIndexOf('/') + 1)}</s-text>
+                          </s-stack>
+                        )}
                       </s-stack>
                     </s-stack>
                   </s-box>
+                )}
+
+                {/* Cart Settings Section - Integrated below product */}
+                <CartToggle
+                  enabled={cartEnabled}
+                  onChange={() => handleToggleCart(!cartEnabled)}
+                  disabled={isUpdatingCart || !productExists}
+                  donationAmount={loaderData.donationAmount}
+                />
+
+                {/* Theme App Extension Section */}
+                {cartEnabled && (
+                  <>
+                    <s-divider />
+                    <DeepLinkButton 
+                      shopDomain={loaderData.shopDomain}
+                      apiKey={loaderData.apiKey}
+                      disabled={!productExists || !cartEnabled}
+                      productExists={productExists}
+                      cartEnabled={cartEnabled}
+                      donationAmount={loaderData.donationAmount}
+                      productId={productId}
+                      variantId={variantId}
+                    />
+                  </>
                 )}
               </>
             ) : (
               <s-banner status="info">
                 <s-paragraph>
                   Click "Create Product" to add a "Support Tree Planting" product to your Shopify store.
-                  You can then set the donation amount directly in Shopify.
+                  You'll be able to select the donation amount before creation.
                 </s-paragraph>
               </s-banner>
             )}
@@ -829,19 +1487,31 @@ export default function HomeProductCreation() {
               <>
                 <s-divider />
                 <s-stack direction="block" gap="small">
-                  <s-heading level="h4">Continue Setup</s-heading>
+                  <s-heading level="h4">Next Steps</s-heading>
                   <s-stack direction="inline" gap="base">
                     <s-button
                       variant="primary"
-                      onClick={() => navigate('/app/cart-settings')}
+                      onClick={() => navigate('/app/stats')}
                     >
-                      Configure Cart Settings
+                      View Dashboard
                     </s-button>
                     <s-button
                       variant="secondary"
+                      onClick={() => navigate('/app/orders')}
+                    >
+                      View Orders
+                    </s-button>
+                    <s-button
+                      variant="tertiary"
                       onClick={() => navigate('/app/pricing')}
                     >
                       View Pricing Plans
+                    </s-button>
+                    <s-button
+                      variant="tertiary"
+                      onClick={() => navigate('/app/instructions')}
+                    >
+                      Setup Instructions
                     </s-button>
                   </s-stack>
                 </s-stack>
@@ -859,8 +1529,7 @@ export default function HomeProductCreation() {
                   ✓ "Support Tree Planting" product has been created in your Shopify store.
                 </s-paragraph>
                 <s-paragraph>
-                  Please set the donation amount by editing the product in Shopify.
-                  The current price is set to $0.00.
+                  Now you can enable the donation checkbox in cart for your customers.
                 </s-paragraph>
               </s-stack>
             </s-banner>
@@ -874,13 +1543,14 @@ export default function HomeProductCreation() {
                   })
                 }
               >
-                Set Price in Shopify
+                Edit Product in Shopify
               </s-button>
               <s-button
                 variant="secondary"
-                onClick={() => navigate('/app/cart-settings')}
+                onClick={() => handleToggleCart(true)}
+                loading={isUpdatingCart}
               >
-                Configure Cart Settings
+                Enable Cart Donations
               </s-button>
             </s-stack>
           </s-section>
