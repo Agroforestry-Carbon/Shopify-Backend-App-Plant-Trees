@@ -1,0 +1,31 @@
+{% comment %}
+  Test Block to Verify Metafields
+{% endcomment %}
+
+<div style="background: #e6f7ff; padding: 20px; border-radius: 8px; border: 2px solid #1890ff; margin: 20px 0;">
+  <h3 style="margin-top: 0;">🌳 Tree Planting Test Block</h3>
+  
+  <p><strong>donation_enabled:</strong> {{ app.metafields.tree_planting.donation_enabled }}</p>
+  <p><strong>donation_amount:</strong> {{ app.metafields.tree_planting.donation_amount }}</p>
+  <p><strong>donation_product_id:</strong> {{ app.metafields.tree_planting.donation_product_id }}</p>
+  <p><strong>donation_variant_id:</strong> {{ app.metafields.tree_planting.donation_variant_id }}</p>
+  
+  {% if app.metafields.tree_planting.donation_enabled %}
+    <div style="background: #d6f5d6; padding: 10px; border-radius: 4px; margin-top: 10px;">
+      ✅ Block should be available in theme editor!
+    </div>
+  {% else %}
+    <div style="background: #ffe6e6; padding: 10px; border-radius: 4px; margin-top: 10px;">
+      ❌ Block will not appear in theme editor
+    </div>
+  {% endif %}
+</div>
+
+{% schema %}
+{
+  "name": "Tree Planting Test",
+  "target": "head",
+  "available_if": "{{ app.metafields.tree_planting.donation_enabled }}",
+  "settings": []
+}
+{% endschema %}

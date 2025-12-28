@@ -515,36 +515,43 @@ const DeepLinkButton = ({ shopDomain, apiKey, disabled = false, productExists, c
   const handleConfigureThemeExtension = async () => {
     if (!shopDomain || !apiKey || !productId || !variantId) {
       console.error('Missing required configuration');
+      shopify.toast.show('Missing configuration. Please refresh the page.', { error: true });
       return;
     }
     
     setIsConfiguring(true);
     
     try {
-      // First, sync the configuration
-      await syncThemeExtensionConfig();
-      
-      // Then open theme editor
+      // Open theme editor for cart page
       const deeplinkUrl = `https://${shopDomain}/admin/themes/current/editor?context=apps&template=cart&activateAppId=${apiKey}/${appBlockHandle}`;
       
       // Open in new tab
       window.open(deeplinkUrl, '_blank', 'noopener,noreferrer');
       
+      shopify.toast.show('Theme editor opened. Add the "Tree Planting Donation" block to your cart page.');
+      
     } catch (error) {
       console.error('Error configuring theme extension:', error);
+      shopify.toast.show('Error opening theme editor', { error: true });
     } finally {
       setIsConfiguring(false);
     }
   };
   
-  const syncThemeExtensionConfig = async () => {
-    // This would call an API endpoint to sync configuration
-    // For now, we'll assume configuration is already synced via the action
-    console.log('Theme extension configuration synced');
+  const handleOpenCartDrawer = () => {
+    if (!shopDomain || !apiKey) {
+      shopify.toast.show('Missing configuration. Please refresh the page.', { error: true });
+      return;
+    }
+    
+    // Open theme editor for index template (where cart drawer is usually located)
+    const deeplinkUrl = `https://${shopDomain}/admin/themes/current/editor?context=apps&template=index&activateAppId=${apiKey}/${appBlockHandle}`;
+    window.open(deeplinkUrl, '_blank', 'noopener,noreferrer');
+    
+    shopify.toast.show('Theme editor opened. Add the "Cart Drawer Donation" block to your theme.');
   };
   
   const handleViewInstructions = () => {
-    // Navigate to instructions page
     navigate('/app/instructions');
   };
   
@@ -575,15 +582,15 @@ const DeepLinkButton = ({ shopDomain, apiKey, disabled = false, productExists, c
           </s-text>
           
           <s-text tone="subdued" variant="bodySm">
-            This provides a more seamless experience than the app embed block and allows for better customization.
+            This provides a more seamless experience and allows for better customization.
           </s-text>
           
-          {productId && variantId && (
+          {productId && variantId && cartEnabled && (
             <s-banner status="success">
               <s-stack direction="block" gap="small">
                 <s-text fontWeight="medium">Theme Extension Ready!</s-text>
                 <s-text variant="bodySm">
-                  Configuration synced: ${donationAmount} donation, product ID: {productId.substring(productId.lastIndexOf('/') + 1)}
+                  Configuration: ${donationAmount} donation, product ID: {productId.substring(productId.lastIndexOf('/') + 1)}
                 </s-text>
               </s-stack>
             </s-banner>
@@ -595,21 +602,16 @@ const DeepLinkButton = ({ shopDomain, apiKey, disabled = false, productExists, c
             variant="primary"
             onClick={handleConfigureThemeExtension}
             loading={isConfiguring}
-            disabled={disabled || !shopDomain || !apiKey || !productId || !variantId}
+            disabled={disabled || !shopDomain || !apiKey || !productId || !variantId || !cartEnabled}
             icon="theme"
           >
-            {isConfiguring ? 'Configuring...' : 'Add to Theme'}
+            {isConfiguring ? 'Opening...' : 'Add to Cart Page'}
           </s-button>
           
           <s-button
             variant="secondary"
-            onClick={() => {
-              if (shopDomain && apiKey) {
-                const deeplinkUrl = `https://${shopDomain}/admin/themes/current/editor?context=apps&template=index&activateAppId=${apiKey}/${appBlockHandle}`;
-                window.open(deeplinkUrl, '_blank', 'noopener,noreferrer');
-              }
-            }}
-            disabled={disabled || !shopDomain || !apiKey}
+            onClick={handleOpenCartDrawer}
+            disabled={disabled || !shopDomain || !apiKey || !productId || !variantId || !cartEnabled}
             icon="cart"
           >
             Add to Cart Drawer
@@ -637,7 +639,15 @@ const DeepLinkButton = ({ shopDomain, apiKey, disabled = false, productExists, c
         {(!productId || !variantId) && (
           <s-banner status="critical">
             <s-text variant="bodySm">
-              Product configuration incomplete. Please refresh the page or contact support.
+              Product configuration incomplete. Please create the donation product first.
+            </s-text>
+          </s-banner>
+        )}
+        
+        {productId && variantId && !cartEnabled && (
+          <s-banner status="warning">
+            <s-text variant="bodySm">
+              Please enable cart donations first to use theme extension.
             </s-text>
           </s-banner>
         )}
@@ -657,11 +667,13 @@ export const loader = async ({ request }) => {
       query {
         shop {
           myshopifyDomain
+          id
         }
       }`
     );
     const shopJson = await shopResponse.json();
     const shopDomain = shopJson.data?.shop?.myshopifyDomain || null;
+    const shopId = shopJson.data?.shop?.id || null;
     
     // Get API key from environment
     const apiKey = process.env.SHOPIFY_API_KEY || "";
@@ -676,6 +688,7 @@ export const loader = async ({ request }) => {
     let exists = false;
     let productId = parsedFields.product_id;
     let variantId = null;
+    let productPrice = parsedFields.donation_amount || "5.00";
     
     // Check if product exists in Shopify
     if (productId) {
@@ -708,17 +721,17 @@ export const loader = async ({ request }) => {
           shopifyProduct = responseJson.data.product;
           exists = true;
           variantId = shopifyProduct.variants.edges[0]?.node?.id || null;
+          productPrice = shopifyProduct.variants.edges[0]?.node?.price || "5.00";
           
           // Update donation amount from product price
-          const currentPrice = shopifyProduct.variants.edges[0]?.node?.price || "0.00";
-          if (parsedFields.donation_amount !== currentPrice) {
+          if (parsedFields.donation_amount !== productPrice) {
             // Update metafield with current price
             await setAppMetafield(admin, {
               key: 'donation_amount',
               type: 'string',
-              value: currentPrice,
+              value: productPrice,
             });
-            parsedFields.donation_amount = currentPrice;
+            parsedFields.donation_amount = productPrice;
           }
         } else {
           // Product not found in Shopify, clear stored ID
@@ -727,6 +740,7 @@ export const loader = async ({ request }) => {
             type: 'string',
             value: "",
           });
+          productId = null;
         }
       } catch (error) {
         console.error('Error fetching product by ID:', error);
@@ -766,6 +780,7 @@ export const loader = async ({ request }) => {
           shopifyProduct = products[0].node;
           exists = true;
           variantId = shopifyProduct.variants.edges[0]?.node?.id || null;
+          productPrice = shopifyProduct.variants.edges[0]?.node?.price || "5.00";
           
           // Store product ID in metafields
           await setAppMetafield(admin, {
@@ -775,7 +790,6 @@ export const loader = async ({ request }) => {
           });
           
           // Store donation amount
-          const productPrice = shopifyProduct.variants.edges[0]?.node?.price || "0.00";
           await setAppMetafield(admin, {
             key: 'donation_amount',
             type: 'string',
@@ -791,18 +805,44 @@ export const loader = async ({ request }) => {
     // Check cart enabled status
     const cartEnabled = parsedFields.cart_enabled === 'true' || parsedFields.cart_enabled === true;
     
-    // Store theme extension configuration
-    if (exists && cartEnabled && productId && variantId) {
+    // Store frontend configuration for theme extension
+    if (exists && cartEnabled && productId && variantId && shopDomain) {
+      // Create a configuration object for the frontend
+      const frontendConfig = {
+        enabled: true,
+        donation_amount: productPrice,
+        product_id: productId,
+        variant_id: variantId,
+        shop_domain: shopDomain,
+        last_updated: new Date().toISOString()
+      };
+      
+      await setAppMetafield(admin, {
+        key: 'frontend_config',
+        type: 'json',
+        value: JSON.stringify(frontendConfig)
+      });
+      
+      // Also update theme extension config
       await setAppMetafield(admin, {
         key: 'theme_extension_config',
         type: 'json',
-        value: {
-          enabled: true,
-          donation_amount: parsedFields.donation_amount || "5.00",
-          product_id: productId,
-          variant_id: variantId,
-          last_updated: new Date().toISOString()
-        }
+        value: JSON.stringify(frontendConfig)
+      });
+      
+      console.log('Frontend config stored:', frontendConfig);
+    } else {
+      // Clear frontend config if not ready
+      await setAppMetafield(admin, {
+        key: 'frontend_config',
+        type: 'json',
+        value: JSON.stringify({
+          enabled: false,
+          donation_amount: "5.00",
+          product_id: null,
+          variant_id: null,
+          shop_domain: shopDomain
+        })
       });
     }
     
@@ -810,14 +850,15 @@ export const loader = async ({ request }) => {
       shopifyProduct, 
       exists, 
       hasError: false,
-      donationAmount: parsedFields.donation_amount || "5.00",
+      donationAmount: productPrice,
       cartEnabled: cartEnabled,
       productData: parsedFields.product_data || null,
       metafields: parsedFields,
       shopDomain,
       apiKey,
       productId: productId,
-      variantId: variantId
+      variantId: variantId,
+      shopId
     };
   } catch (error) {
     console.error('Loader error:', error);
@@ -831,12 +872,13 @@ export const loader = async ({ request }) => {
       shopDomain: null,
       apiKey: process.env.SHOPIFY_API_KEY || "",
       productId: null,
-      variantId: null
+      variantId: null,
+      shopId: null
     };
   }
 };
 
-// Action function - Fixed GraphQL mutations
+// app/routes/app._index.jsx - Complete Action Function with Strict Boolean Handling
 export const action = async ({ request }) => {
   try {
     const { admin } = await authenticate.admin(request);
@@ -845,12 +887,15 @@ export const action = async ({ request }) => {
     const price = formData.get("price");
     const cartEnabled = formData.get("cartEnabled");
 
+    console.log(`Action received: ${actionType}, price: ${price}, cartEnabled: ${cartEnabled}`);
+
     if (actionType === "create") {
-      // Check if product already exists in metafields
+      // Check if product already exists
       const metafields = await getAppMetafields(admin);
       const parsedFields = parseMetafields(metafields);
       
-      if (parsedFields.product_id) {
+      if (parsedFields.tree_planting?.product_id || parsedFields.product_id) {
+        const productId = parsedFields.tree_planting?.product_id || parsedFields.product_id;
         try {
           const checkResponse = await admin.graphql(
             `#graphql
@@ -861,22 +906,22 @@ export const action = async ({ request }) => {
                 status
               }
             }`,
-            { variables: { id: parsedFields.product_id } }
+            { variables: { id: productId } }
           );
           const checkJson = await checkResponse.json();
           if (checkJson.data?.product && checkJson.data.product.status !== 'ARCHIVED') {
             return { 
               success: false, 
               error: "Product already exists. Please delete it in Shopify first.",
-              productId: parsedFields.product_id
+              productId: productId
             };
           }
         } catch (error) {
-          // Product not found, continue with creation
+          console.log('Product not found by ID, continuing with creation');
         }
       }
 
-      // Create product with title only first - using the correct mutation format from your working code
+      // Create the donation product
       const productResponse = await admin.graphql(
         `#graphql
         mutation createTreePlantingProduct($product: ProductCreateInput!) {
@@ -917,8 +962,6 @@ export const action = async ({ request }) => {
 
       const productJson = await productResponse.json();
       
-      console.log('Product creation response:', productJson);
-      
       if (productJson.data.productCreate.userErrors?.length > 0) {
         return { 
           success: false, 
@@ -928,8 +971,11 @@ export const action = async ({ request }) => {
 
       const product = productJson.data.productCreate.product;
       const variantId = product.variants.edges[0]?.node?.id;
-      
-      // Update variant price using productVariantsBulkUpdate
+      const currentPrice = price || "5.00";
+
+      console.log(`Product created: ${product.id}, Variant: ${variantId}, Price: ${currentPrice}`);
+
+      // Update variant price if specified
       if (price && variantId) {
         const variantResponse = await admin.graphql(
           `#graphql
@@ -959,35 +1005,80 @@ export const action = async ({ request }) => {
         );
         
         const variantJson = await variantResponse.json();
-        console.log('Variant update response:', variantJson);
-        
         if (variantJson.data.productVariantsBulkUpdate.userErrors?.length > 0) {
-          return {
-            success: false,
-            error: variantJson.data.productVariantsBulkUpdate.userErrors[0].message
-          };
+          console.error('Variant price update errors:', variantJson.data.productVariantsBulkUpdate.userErrors);
         }
       }
 
-      const currentPrice = price || "0.00";
+      // SET METAFIELDS FOR THEME APP EXTENSION (tree_planting namespace)
+      console.log('Setting theme app extension metafields...');
+      
+      // Delete existing boolean metafields to ensure clean slate
+      try {
+        await deleteAppMetafield(admin, 'donation_enabled');
+        await deleteAppMetafield(admin, 'cart_enabled');
+      } catch (error) {
+        console.log('Error deleting existing metafields:', error);
+        // Continue anyway
+      }
 
-      // Store in app metafields
-      await setAppMetafield(admin, {
-        key: 'product_id',
-        type: 'string',
-        value: product.id,
-      });
+      // Set all metafields with CORRECT boolean handling
+      // For Shopify boolean metafields, we MUST use type: 'boolean' and string values "true"/"false"
+      await Promise.all([
+        // 1. donation_enabled as BOOLEAN (false initially)
+        setAppMetafield(admin, {
+          namespace: 'tree_planting',
+          key: 'donation_enabled',
+          type: 'boolean', // This tells Shopify it's a boolean type
+          value: false, // This will be converted to string "false" by setAppMetafield
+        }),
 
-      await setAppMetafield(admin, {
-        key: 'donation_amount',
-        type: 'string',
-        value: currentPrice,
-      });
+        // 2. cart_enabled as BOOLEAN (false initially)
+        setAppMetafield(admin, {
+          namespace: 'tree_planting',
+          key: 'cart_enabled',
+          type: 'boolean',
+          value: false,
+        }),
 
+        // 3. product_id as single_line_text_field
+        setAppMetafield(admin, {
+          namespace: 'tree_planting',
+          key: 'product_id',
+          type: 'single_line_text_field',
+          value: product.id,
+        }),
+
+        // 4. donation_amount as single_line_text_field
+        setAppMetafield(admin, {
+          namespace: 'tree_planting',
+          key: 'donation_amount',
+          type: 'single_line_text_field',
+          value: currentPrice,
+        }),
+
+        // 5. donation_product_id as single_line_text_field
+        setAppMetafield(admin, {
+          namespace: 'tree_planting',
+          key: 'donation_product_id',
+          type: 'single_line_text_field',
+          value: product.id,
+        }),
+
+        // 6. donation_variant_id as single_line_text_field
+        setAppMetafield(admin, {
+          namespace: 'tree_planting',
+          key: 'donation_variant_id',
+          type: 'single_line_text_field',
+          value: variantId,
+        }),
+      ]);
+
+      // 7. Store product data as JSON (for app internal use)
       await setAppMetafield(admin, {
         key: 'product_data',
         type: 'json',
-        value: {
+        value: JSON.stringify({
           productId: product.id,
           title: product.title,
           handle: product.handle,
@@ -995,59 +1086,81 @@ export const action = async ({ request }) => {
           variantId: variantId,
           createdAt: new Date().toISOString(),
           status: product.status,
-        },
+        }),
       });
 
-      // Initialize cart settings to false
-      await setAppMetafield(admin, {
-        key: 'cart_enabled',
-        type: 'boolean',
-        value: "false",
-      });
+      console.log('Product creation complete with all metafields set');
 
-      // Store theme extension configuration
-      await setAppMetafield(admin, {
-        key: 'theme_extension_config',
-        type: 'json',
-        value: {
-          enabled: false, // Not enabled until cart is enabled
-          donation_amount: currentPrice,
-          product_id: product.id,
-          variant_id: variantId,
-          last_updated: new Date().toISOString()
-        }
-      });
+      // Verify the boolean was set correctly
+      const verifyResponse = await admin.graphql(
+        `#graphql
+        query {
+          currentAppInstallation {
+            metafield(namespace: "tree_planting", key: "donation_enabled") {
+              key
+              namespace
+              type
+              value
+            }
+          }
+        }`
+      );
+      
+      const verifyJson = await verifyResponse.json();
+      const metafield = verifyJson.data?.currentAppInstallation?.metafield;
+      console.log('✅ Created boolean metafield verification:', metafield);
 
       return {
         product,
         variantId,
         success: true,
       };
-    } else if (actionType === "updateCart") {
-      // Update cart settings
-      await setAppMetafield(admin, {
-        key: 'cart_enabled',
-        type: 'boolean',
-        value: cartEnabled,
-      });
-
-      // Get product info to update theme extension config
-      const metafields = await getAppMetafields(admin);
-      const parsedFields = parseMetafields(metafields);
+    } 
+    
+    else if (actionType === "updateCart") {
+      console.log(`Updating cart: cartEnabled = ${cartEnabled}`);
       
-      const productId = parsedFields.product_id;
-      const donationAmount = parsedFields.donation_amount || "5.00";
+      // Convert string to boolean
+      const isCartEnabled = cartEnabled === 'true';
       
-      if (productId && cartEnabled === 'true') {
-        // Get product variant
+      // Get existing product_id to verify product exists
+      const getProductIdQuery = await admin.graphql(
+        `#graphql
+        query {
+          currentAppInstallation {
+            metafield(namespace: "tree_planting", key: "product_id") {
+              value
+            }
+          }
+        }`
+      );
+      
+      const productIdJson = await getProductIdQuery.json();
+      const productId = productIdJson.data?.currentAppInstallation?.metafield?.value;
+      
+      if (!productId) {
+        return { 
+          success: false, 
+          error: "Please create the Tree Planting product first before enabling cart donations." 
+        };
+      }
+      
+      console.log(`Product found: ${productId}`);
+      
+      // Fetch product details to get current price and variant
+      let variantId, currentPrice;
+      try {
         const productResponse = await admin.graphql(
           `#graphql
           query GetProduct($id: ID!) {
             product(id: $id) {
+              id
+              title
               variants(first: 1) {
                 edges {
                   node {
                     id
+                    price
                   }
                 }
               }
@@ -1057,39 +1170,122 @@ export const action = async ({ request }) => {
         );
         
         const productJson = await productResponse.json();
-        const variantId = productJson.data?.product?.variants?.edges[0]?.node?.id;
+        variantId = productJson.data?.product?.variants?.edges[0]?.node?.id;
+        currentPrice = productJson.data?.product?.variants?.edges[0]?.node?.price || "5.00";
         
-        if (variantId) {
-          // Update theme extension configuration
-          await setAppMetafield(admin, {
-            key: 'theme_extension_config',
-            type: 'json',
-            value: {
-              enabled: true,
-              donation_amount: donationAmount,
-              product_id: productId,
-              variant_id: variantId,
-              last_updated: new Date().toISOString()
-            }
-          });
-          
-          // Also store as separate metafields for easy access
-          await setAppMetafield(admin, {
-            key: 'cart_attributes',
-            type: 'json',
-            value: {
-              donation_enabled: 'true',
-              donation_amount: donationAmount,
-              donation_product_id: productId,
-              donation_variant_id: variantId
-            }
-          });
+        if (!variantId) {
+          return { 
+            success: false, 
+            error: "Product variant not found. Please check the product in Shopify." 
+          };
         }
+        
+        console.log(`Product verified: ${productJson.data.product.title}, Variant: ${variantId}, Current Price: ${currentPrice}`);
+      } catch (error) {
+        console.error('Error verifying product:', error);
+        return { 
+          success: false, 
+          error: "Error verifying product. Please try again." 
+        };
       }
 
+      // Delete existing boolean metafields first (important for type consistency)
+      try {
+        await deleteAppMetafield(admin, 'donation_enabled');
+        await deleteAppMetafield(admin, 'cart_enabled');
+      } catch (error) {
+        console.log('Error deleting existing metafields:', error);
+        // Continue anyway
+      }
+
+      // Set all updated metafields with boolean type
+      await Promise.all([
+        // Set boolean metafields with type: 'boolean'
+        setAppMetafield(admin, {
+          namespace: 'tree_planting',
+          key: 'donation_enabled',
+          type: 'boolean',
+          value: isCartEnabled,
+        }),
+
+        setAppMetafield(admin, {
+          namespace: 'tree_planting',
+          key: 'cart_enabled',
+          type: 'boolean',
+          value: isCartEnabled,
+        }),
+
+        // Set text metafields
+        setAppMetafield(admin, {
+          namespace: 'tree_planting',
+          key: 'donation_amount',
+          type: 'single_line_text_field',
+          value: currentPrice,
+        }),
+
+        setAppMetafield(admin, {
+          namespace: 'tree_planting',
+          key: 'donation_product_id',
+          type: 'single_line_text_field',
+          value: productId,
+        }),
+
+        setAppMetafield(admin, {
+          namespace: 'tree_planting',
+          key: 'donation_variant_id',
+          type: 'single_line_text_field',
+          value: variantId,
+        }),
+      ]);
+
+      console.log(`Set donation_enabled (boolean) = ${isCartEnabled}`);
+
+      // Also update theme extension configuration
+      await setAppMetafield(admin, {
+        namespace: 'tree_planting',
+        key: 'theme_extension_config',
+        type: 'json',
+        value: JSON.stringify({
+          enabled: isCartEnabled,
+          donation_amount: currentPrice,
+          product_id: productId,
+          variant_id: variantId,
+          last_updated: new Date().toISOString()
+        })
+      });
+
+      // Verify the boolean metafield was set correctly
+      const verifyResponse = await admin.graphql(
+        `#graphql
+        query {
+          currentAppInstallation {
+            metafield(namespace: "tree_planting", key: "donation_enabled") {
+              key
+              namespace
+              type
+              value
+            }
+          }
+        }`
+      );
+      
+      const verifyJson = await verifyResponse.json();
+      const metafield = verifyJson.data?.currentAppInstallation?.metafield;
+      
+      console.log('✅ Updated boolean metafield verification:', {
+        exists: !!metafield,
+        type: metafield?.type,
+        value: metafield?.value,
+        isCorrectType: metafield?.type === 'boolean',
+        willWorkInLiquid: metafield?.value === 'true'
+      });
+      
       return {
         success: true,
-        cartEnabled: cartEnabled === 'true'
+        cartEnabled: isCartEnabled,
+        donationAmount: currentPrice,
+        productId: productId,
+        variantId: variantId
       };
     }
 
@@ -1102,7 +1298,6 @@ export const action = async ({ request }) => {
     };
   }
 };
-
 // Main Component
 export default function HomeProductCreation() {
   const fetcher = useFetcher();
@@ -1451,7 +1646,7 @@ export default function HomeProductCreation() {
                 />
 
                 {/* Theme App Extension Section */}
-                {cartEnabled && (
+                {cartEnabled && productExists && (
                   <>
                     <s-divider />
                     <DeepLinkButton 

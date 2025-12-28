@@ -9,84 +9,223 @@ import prisma from "./db.server";
 
 // In shopify.server.js - add these functions
 
-const APP_METAFIELD_NAMESPACE = "tree_planting_donation";
+const APP_METAFIELD_NAMESPACE = "tree_planting";
 
+// In shopify.server.js - update getAppMetafields to fetch from currentAppInstallation
 export async function getAppMetafields(admin) {
   try {
-    const response = await admin.graphql(`
+    console.log('Fetching app metafields from currentAppInstallation...');
+    
+    const response = await admin.graphql(
+      `#graphql
       query {
         currentAppInstallation {
-          metafields(first: 50, namespace: "${APP_METAFIELD_NAMESPACE}") {
-            nodes {
-              namespace
-              key
-              value
-              type
+          id
+          metafields(first: 50) {
+            edges {
+              node {
+                id
+                namespace
+                key
+                value
+                type
+              }
             }
           }
         }
-      }
-    `);
-
-    const data = await response.json();
-    return data?.data?.currentAppInstallation?.metafields?.nodes || [];
+      }`
+    );
+    
+    const json = await response.json();
+    const metafields = json.data?.currentAppInstallation?.metafields?.edges || [];
+    
+    console.log(`Found ${metafields.length} app metafields`);
+    
+    return metafields;
   } catch (error) {
     console.error('Error fetching app metafields:', error);
     return [];
   }
 }
-
-export async function setAppMetafield(admin, { key, type, value }) {
+// Update the setAppMetafield function
+export async function setAppMetafield(
+  admin,
+  {
+    namespace = 'tree_planting',
+    key,
+    type,
+    value,
+    ownerId, // optional override, otherwise use currentAppInstallation
+  },
+) {
   try {
-    // Get app installation ID
-    const getID = await admin.graphql(`
-      query {
-        currentAppInstallation {
-          id
-        }
+    // 1. If no ownerId provided, get the current app installation ID
+    if (!ownerId) {
+      const ownerIdResponse = await admin.graphql(
+        `#graphql
+        query CurrentAppInstallationId {
+          currentAppInstallation {
+            id
+          }
+        }`,
+      );
+
+      const ownerIdJson = await ownerIdResponse.json();
+      ownerId = ownerIdJson?.data?.currentAppInstallation?.id;
+
+      if (!ownerId) {
+        throw new Error('Unable to resolve current app installation ID');
       }
-    `);
+    }
 
-    const renderId = await getID.json();
-    const ownerId = renderId.data.currentAppInstallation.id;
+    // 2. Prepare the value based on type - CRITICAL FIX HERE
+    let preparedValue;
+    
+    if (type === 'boolean') {
+      // For boolean type, we must pass a string "true" or "false"
+      // Convert boolean to string explicitly
+      if (typeof value === 'boolean') {
+        preparedValue = value ? 'true' : 'false';
+      } else if (typeof value === 'string') {
+        // Handle string "true"/"false" or "True"/"False"
+        const lowerValue = value.toLowerCase();
+        preparedValue = lowerValue === 'true' ? 'true' : 'false';
+      } else {
+        // For any other type, default to false
+        preparedValue = 'false';
+      }
+    } else if (typeof value === 'object') {
+      preparedValue = JSON.stringify(value);
+    } else {
+      preparedValue = String(value);
+    }
 
-    const mutation = `
-      mutation CreateAppDataMetafield($metafieldsSetInput: [MetafieldsSetInput!]!) {
-        metafieldsSet(metafields: $metafieldsSetInput) {
+    console.log(`Setting metafield ${namespace}.${key} as ${type} with value: ${preparedValue} (input value: ${value}, type: ${typeof value})`);
+
+    // 3. Call metafieldsSet with a single MetafieldsSetInput
+    const response = await admin.graphql(
+      `#graphql
+      mutation SetMetafield($input: MetafieldsSetInput!) {
+        metafieldsSet(metafields: [$input]) {
           metafields {
             id
             namespace
             key
             value
+            type
           }
           userErrors {
             field
             message
+            code
           }
         }
-      }
-    `;
-
-    const variables = {
-      metafieldsSetInput: [
-        {
-          namespace: APP_METAFIELD_NAMESPACE,
-          key,
-          type,
-          value: typeof value === 'object' ? JSON.stringify(value) : String(value),
-          ownerId,
+      }`,
+      {
+        variables: {
+          input: {
+            namespace,
+            key,
+            type, // e.g. "boolean", "single_line_text_field", "json", etc.
+            value: preparedValue,
+            ownerId,
+          },
         },
-      ],
-    };
+      },
+    );
 
-    const response = await admin.graphql(mutation, { variables });
-    return await response.json();
+    const responseJson = await response.json();
+    const result = responseJson?.data?.metafieldsSet;
+
+    if (!result) {
+      console.error('Unexpected metafieldsSet response:', responseJson);
+      throw new Error('No metafieldsSet payload returned from API');
+    }
+
+    if (result.userErrors?.length) {
+      console.error('MetafieldsSet errors:', result.userErrors);
+      throw new Error(result.userErrors[0].message);
+    }
+
+    // metafields is an array because metafieldsSet is bulk
+    const createdMetafield = result.metafields?.[0] ?? null;
+    console.log(`✅ Metafield ${namespace}.${key} set successfully:`, createdMetafield);
+    return createdMetafield;
   } catch (error) {
-    console.error('Error setting app metafield:', error);
-    return { errors: [error.message] };
+    console.error('Error setting metafield:', error);
+    throw error;
+  }
+}
+// Add to shopify.server.js
+export async function getThemeAppExtensionConfig(admin) {
+  try {
+    const metafields = await getAppMetafields(admin);
+    const parsedFields = parseMetafields(metafields);
+    
+    // Get the theme extension config or build it
+    const themeConfig = parsedFields.theme_extension_config || parsedFields.tree_planting || {};
+    
+    return {
+      donation_enabled: themeConfig.donation_enabled === true || themeConfig.donation_enabled === 'true',
+      donation_amount: themeConfig.donation_amount || "5.00",
+      donation_product_id: themeConfig.donation_product_id || themeConfig.product_id,
+      donation_variant_id: themeConfig.donation_variant_id,
+    };
+  } catch (error) {
+    console.error('Error getting theme app extension config:', error);
+    return {
+      donation_enabled: false,
+      donation_amount: "5.00",
+      donation_product_id: null,
+      donation_variant_id: null,
+    };
   }
 }
 
+export async function updateThemeAppExtensionConfig(admin, config) {
+  try {
+    // Update both namespaces for compatibility
+    await setAppMetafield(admin, {
+      namespace: 'tree_planting',
+      key: 'donation_enabled',
+      type: 'boolean',
+      value: config.donation_enabled,
+    });
+    
+    await setAppMetafield(admin, {
+      namespace: 'tree_planting',
+      key: 'donation_amount',
+      type: 'single_line_text_field',
+      value: config.donation_amount,
+    });
+    
+    await setAppMetafield(admin, {
+      namespace: 'tree_planting',
+      key: 'donation_product_id',
+      type: 'single_line_text_field',
+      value: config.donation_product_id,
+    });
+    
+    await setAppMetafield(admin, {
+      namespace: 'tree_planting',
+      key: 'donation_variant_id',
+      type: 'single_line_text_field',
+      value: config.donation_variant_id,
+    });
+    
+    // Also store as JSON for easy access
+    await setAppMetafield(admin, {
+      key: 'theme_extension_config',
+      type: 'json',
+      value: config,
+    });
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Error updating theme app extension config:', error);
+    return { success: false, error: error.message };
+  }
+}
 export async function deleteAppMetafield(admin, key) {
   try {
     const getID = await admin.graphql(`
@@ -132,19 +271,142 @@ export async function deleteAppMetafield(admin, key) {
   }
 }
 
-// Helper to parse metafields
+// Update the parseMetafields function
+// Update the parseMetafields function for proper boolean handling
 export function parseMetafields(metafields) {
-  const result = {};
-  metafields.forEach(field => {
-    try {
-      result[field.key] = field.type === 'json' ? JSON.parse(field.value) : field.value;
-    } catch {
-      result[field.key] = field.value;
+  try {
+    console.log('Parsing metafields array:', metafields);
+    
+    const parsed = {};
+    
+    if (!Array.isArray(metafields)) {
+      console.error('Metafields is not an array:', metafields);
+      return parsed;
     }
-  });
-  return result;
+    
+    metafields.forEach(edge => {
+      const node = edge.node || edge;
+      if (node && node.key && node.value !== undefined && node.value !== null) {
+        // Handle different types
+        if (node.type === 'json' || node.value.startsWith('{') || node.value.startsWith('[')) {
+          try {
+            parsed[node.key] = JSON.parse(node.value);
+          } catch (e) {
+            parsed[node.key] = node.value;
+          }
+        } else if (node.type === 'boolean') {
+          // Handle boolean type correctly - convert string to boolean
+          // Shopify stores booleans as strings "true"/"false"
+          parsed[node.key] = node.value === 'true' || node.value === true;
+          console.log(`📊 Parsed boolean metafield ${node.key}: ${node.value} -> ${parsed[node.key]}`);
+        } else if (node.type === 'number_integer' || node.type === 'number_decimal') {
+          parsed[node.key] = Number(node.value);
+        } else {
+          parsed[node.key] = node.value;
+        }
+        
+        // Also store namespaced keys
+        if (node.namespace) {
+          if (!parsed[node.namespace]) {
+            parsed[node.namespace] = {};
+          }
+          parsed[node.namespace][node.key] = parsed[node.key];
+        }
+      }
+    });
+    
+    console.log('✅ Parsed metafields:', parsed);
+    return parsed;
+  } catch (error) {
+    console.error('Error parsing metafields:', error);
+    return {};
+  }
+}
+// Add this function to get all metafields
+export async function getAllAppMetafields(admin) {
+  try {
+    const response = await admin.graphql(
+      `#graphql
+      query {
+        currentAppInstallation {
+          metafields(first: 100) {
+            edges {
+              node {
+                id
+                namespace
+                key
+                value
+                type
+              }
+            }
+          }
+        }
+      }`
+    );
+    
+    const json = await response.json();
+    const edges = json.data?.currentAppInstallation?.metafields?.edges || [];
+    
+    console.log(`Found ${edges.length} total metafields`);
+    
+    return edges.map(edge => edge.node);
+  } catch (error) {
+    console.error('Error fetching all metafields:', error);
+    return [];
+  }
 }
 
+// Update the deleteAppMetafield function
+export async function deleteAppMetafield(admin, key, namespace = 'tree_planting') {
+  try {
+    // Get current app installation ID
+    const getID = await admin.graphql(`
+      query {
+        currentAppInstallation {
+          id
+        }
+      }
+    `);
+
+    const renderId = await getID.json();
+    const ownerId = renderId.data.currentAppInstallation.id;
+
+    const mutation = `
+      mutation metafieldsDelete($metafields: [MetafieldIdentifierInput!]!) {
+        metafieldsDelete(metafields: $metafields) {
+          deletedMetafields {
+            id
+            ownerId
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `;
+
+    const variables = {
+      metafields: [
+        {
+          key: key,
+          namespace: namespace,
+          ownerId: ownerId,
+        },
+      ],
+    };
+
+    const response = await admin.graphql(mutation, { variables });
+    const result = await response.json();
+    
+    console.log(`Deleted metafield ${namespace}.${key}:`, result.data?.metafieldsDelete);
+    
+    return result;
+  } catch (error) {
+    console.error(`Error deleting metafield ${namespace}.${key}:`, error);
+    return { errors: [error.message] };
+  }
+}
 // shopify.server.js - Add this function
 export async function getShopDomain(admin) {
   try {

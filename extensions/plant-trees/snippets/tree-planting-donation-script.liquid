@@ -149,3 +149,30 @@
     window.treePlantingDonation.init();
   }
 </script>
+
+<script>
+  (function() {
+    // Debug script for theme app extension
+    console.log('Tree Planting Donation Extension Loaded');
+    
+    // Check if metafields are available
+    if (typeof window.Shopify === 'object' && window.Shopify.designMode) {
+      console.log('In theme editor mode');
+      
+      // Listen for theme editor events
+      document.addEventListener('shopify:section:load', function() {
+        console.log('Section loaded, checking for donation block');
+        checkDonationBlockAvailability();
+      });
+      
+      // Initial check
+      setTimeout(checkDonationBlockAvailability, 1000);
+    }
+    
+    function checkDonationBlockAvailability() {
+      // This would normally check app.metafields.tree_planting.donation_enabled
+      console.log('Checking donation block availability...');
+      console.log('Theme app extension metafields should determine visibility');
+    }
+  })();
+</script>
