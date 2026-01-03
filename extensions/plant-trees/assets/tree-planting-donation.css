@@ -1,6 +1,6 @@
 /* Tree Planting Donation App Extension Styles */
 .tree-planting-donation {
-  margin: 20px 0;
+  
   padding: 16px;
   background-color: rgba(0, 128, 96, 0.05);
   border-radius: 8px;
@@ -101,8 +101,8 @@
 
 /* Cart drawer specific styles */
 .cart-drawer .tree-planting-donation {
-  margin: 16px 0;
-  padding: 12px;
+ 
+ 
 }
 
 .cart-drawer .tree-planting-donation label {
@@ -122,4 +122,49 @@
   .tree-planting-donation label {
     font-size: 15px;
   }
+}
+
+/* Cart-specific styles */
+.tree-planting-donation-cart {
+
+  background-color: rgba(0, 128, 96, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(0, 128, 96, 0.2);
+}
+
+.tree-planting-donation-cart-drawer {
+  margin: 15px 0;
+  padding: 0px;
+  background-color: rgba(0, 128, 96, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(0, 128, 96, 0.2);
+}
+
+.cart-drawer-donation {
+  margin-top: 15px !important;
+  margin-bottom: 15px !important;
+}
+
+/* Ensure it appears at the right place in cart flows */
+.cart-drawer .tree-planting-donation-cart-drawer {
+  order: 999; /* Make it appear near the end */
+}
+
+/* Hide the original wrapper */
+.tree-planting-donation-wrapper {
+  display: none !important;
+}
+
+/* Show only injected blocks */
+.tree-planting-donation-injected {
+  display: block !important;
+}
+    .cart__ctas {
+        display: flex;
+        gap: 1rem;
+        flex-direction: column !important;
+    }
+
+    .tree-planting-donation-wrapper.tree-planting-donation-injected.tree-planting-donation-cart-drawer.cart-drawer-donation {
+    display: none !important;
 }
