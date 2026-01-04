@@ -1,13 +1,15 @@
+
+//  shopify.server.js - 
 import "@shopify/shopify-app-react-router/adapters/node";
 import {
   ApiVersion,
   AppDistribution,
-  shopifyApp,
+  shopifyApp,BillingInterval  
 } from "@shopify/shopify-app-react-router/server";
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import prisma from "./db.server";
 
-// In shopify.server.js - add these functions
+
 
 const APP_METAFIELD_NAMESPACE = "tree_planting";
 
@@ -668,6 +670,382 @@ export async function syncCartAttributes(admin, session) {
     return null;
   }
 }
+
+
+// Add these functions to shopify.server.js after the existing functions:
+
+// Get current usage count from metafields
+export async function getCurrentUsage(admin) {
+  try {
+    const metafields = await getAllAppMetafields(admin);
+    const parsedFields = parseMetafields(metafields);
+    
+    // Get current month's usage
+    const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+    const usageKey = `usage_${currentMonth}`;
+    
+    let usageCount = 0;
+    
+    // Try to get from monthly usage metafield
+    if (parsedFields[usageKey]) {
+      usageCount = parseInt(parsedFields[usageKey]) || 0;
+    } else {
+      // Check for old format or total usage
+      usageCount = parseInt(parsedFields.total_usage) || 
+                   parseInt(parsedFields.donation_count) || 0;
+    }
+    
+    return usageCount;
+  } catch (error) {
+    console.error('Error getting current usage:', error);
+    return 0;
+  }
+}
+
+// Increment usage count
+export async function incrementUsage(admin, amount = 1) {
+  try {
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    const usageKey = `usage_${currentMonth}`;
+    
+    // Get current usage
+    const currentUsage = await getCurrentUsage(admin);
+    const newUsage = currentUsage + amount;
+    
+    // Update monthly usage
+    await setAppMetafield(admin, {
+      key: usageKey,
+      type: 'number_integer',
+      value: newUsage.toString(),
+    });
+    
+    // Also update total usage
+    const totalUsage = parseInt(await getMetafieldValue(admin, 'total_usage') || '0') + amount;
+    await setAppMetafield(admin, {
+      key: 'total_usage',
+      type: 'number_integer',
+      value: totalUsage.toString(),
+    });
+    
+    // Update statistics
+    await updateStatistics(admin, amount);
+    
+    return newUsage;
+  } catch (error) {
+    console.error('Error incrementing usage:', error);
+    throw error;
+  }
+}
+
+// Get current pricing plan
+export async function getPricingPlan(admin) {
+  try {
+    const metafields = await getAllAppMetafields(admin);
+    const parsedFields = parseMetafields(metafields);
+    
+    // Check for active subscription first
+    const billingStatus = await getBillingStatus(admin);
+    
+    if (billingStatus.hasActiveSubscription) {
+      // Check which plan is active
+      const subscriptions = billingStatus.subscriptions;
+      const essentialSub = subscriptions.find(s => 
+        s.name.includes('Essential') || s.lineItems[0]?.plan?.pricingDetails?.price?.amount === '6.99'
+      );
+      const proSub = subscriptions.find(s => 
+        s.name.includes('Professional') || s.lineItems[0]?.plan?.pricingDetails?.price?.amount === '29.99'
+      );
+      
+      if (proSub) return 'professional';
+      if (essentialSub) return 'essential';
+    }
+    
+    // Fallback to metafield if no active subscription
+    return parsedFields.current_plan || 'free';
+  } catch (error) {
+    console.error('Error getting pricing plan:', error);
+    return 'free';
+  }
+}
+
+// Update pricing plan in metafields
+export async function updatePricingPlan(admin, plan) {
+  try {
+    await setAppMetafield(admin, {
+      key: 'current_plan',
+      type: 'single_line_text_field',
+      value: plan,
+    });
+    
+    // Also store last plan change date
+    await setAppMetafield(admin, {
+      key: 'plan_last_updated',
+      type: 'date_time',
+      value: new Date().toISOString(),
+    });
+    
+    return { success: true, plan };
+  } catch (error) {
+    console.error('Error updating pricing plan:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Check if usage limit is reached
+export async function isUsageLimitReached(admin) {
+  try {
+    const currentPlan = await getPricingPlan(admin);
+    
+    if (currentPlan !== 'free') {
+      return false; // Paid plans have no limits
+    }
+    
+    const currentUsage = await getCurrentUsage(admin);
+    const FREE_PLAN_LIMIT = 5000;
+    
+    return currentUsage >= FREE_PLAN_LIMIT;
+  } catch (error) {
+    console.error('Error checking usage limit:', error);
+    return false;
+  }
+}
+
+// Get billing status (check for active subscriptions)
+export async function getBillingStatus(admin) {
+  try {
+    const response = await admin.graphql(
+      `#graphql
+      query {
+        currentAppInstallation {
+          activeSubscriptions {
+            id
+            name
+            status
+            test
+            lineItems {
+              id
+              plan {
+                pricingDetails {
+                  ... on AppRecurringPricing {
+                    interval
+                    price {
+                      amount
+                      currencyCode
+                    }
+                  }
+                  ... on AppUsagePricing {
+                    terms
+                    balanceUsed {
+                      amount
+                      currencyCode
+                    }
+                    cappedAmount {
+                      amount
+                      currencyCode
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }`
+    );
+    
+    const data = await response.json();
+    const subscriptions = data?.data?.currentAppInstallation?.activeSubscriptions || [];
+    
+    return {
+      hasActiveSubscription: subscriptions.length > 0,
+      subscriptions: subscriptions
+    };
+  } catch (error) {
+    console.error('Error getting billing status:', error);
+    return {
+      hasActiveSubscription: false,
+      subscriptions: []
+    };
+  }
+}
+
+// Create subscription (initiate billing)
+export async function createSubscription(admin, plan) {
+  try {
+    let returnUrl = `${process.env.SHOPIFY_APP_URL}/app/pricing`;
+    let test = process.env.NODE_ENV !== 'production';
+    
+    const mutation = `
+      mutation CreateSubscription($name: String!, $lineItems: [AppSubscriptionLineItemInput!]!, $returnUrl: URL!, $test: Boolean!) {
+        appSubscriptionCreate(
+          name: $name
+          lineItems: $lineItems
+          returnUrl: $returnUrl
+          test: $test
+        ) {
+          appSubscription {
+            id
+            status
+          }
+          confirmationUrl
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `;
+    
+    let lineItems = [];
+    let planName = '';
+    
+    if (plan === 'essential') {
+      lineItems = [{
+        plan: {
+          appRecurringPricingDetails: {
+            price: { amount: 6.99, currencyCode: "USD" },
+            interval: "EVERY_30_DAYS"
+          }
+        }
+      }];
+      planName = 'Tree Planting - Essential Plan';
+    } else if (plan === 'professional') {
+      lineItems = [{
+        plan: {
+          appRecurringPricingDetails: {
+            price: { amount: 29.99, currencyCode: "USD" },
+            interval: "EVERY_30_DAYS"
+          }
+        }
+      }];
+      planName = 'Tree Planting - Professional Plan';
+    } else {
+      throw new Error('Invalid plan selected');
+    }
+    
+    const variables = {
+      name: planName,
+      lineItems: lineItems,
+      returnUrl: returnUrl,
+      test: test
+    };
+    
+    const response = await admin.graphql(mutation, { variables });
+    const result = await response.json();
+    
+    if (result.data.appSubscriptionCreate.userErrors?.length) {
+      throw new Error(result.data.appSubscriptionCreate.userErrors[0].message);
+    }
+    
+    return {
+      confirmationUrl: result.data.appSubscriptionCreate.confirmationUrl,
+      subscriptionId: result.data.appSubscriptionCreate.appSubscription.id
+    };
+  } catch (error) {
+    console.error('Error creating subscription:', error);
+    throw error;
+  }
+}
+
+// Update statistics in metafields
+export async function updateStatistics(admin, donationCount = 1) {
+  try {
+    // Get current statistics
+    const statsResponse = await admin.graphql(
+      `#graphql
+      query {
+        currentAppInstallation {
+          metafield(namespace: "tree_planting", key: "statistics") {
+            value
+          }
+        }
+      }`
+    );
+    
+    const statsData = await statsResponse.json();
+    let statistics = {
+      total_donations: 0,
+      total_trees: 0,
+      total_revenue: 0,
+      last_updated: new Date().toISOString(),
+      monthly_stats: {}
+    };
+    
+    if (statsData.data?.currentAppInstallation?.metafield?.value) {
+      statistics = JSON.parse(statsData.data.currentAppInstallation.metafield.value);
+    }
+    
+    // Update statistics
+    statistics.total_donations += donationCount;
+    statistics.total_trees += donationCount;
+    // Note: Revenue would need to be calculated from orders
+    statistics.last_updated = new Date().toISOString();
+    
+    // Update monthly stats
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    if (!statistics.monthly_stats[currentMonth]) {
+      statistics.monthly_stats[currentMonth] = {
+        donations: 0,
+        trees: 0,
+        revenue: 0
+      };
+    }
+    statistics.monthly_stats[currentMonth].donations += donationCount;
+    statistics.monthly_stats[currentMonth].trees += donationCount;
+    
+    // Save updated statistics
+    await setAppMetafield(admin, {
+      namespace: 'tree_planting',
+      key: 'statistics',
+      type: 'json',
+      value: JSON.stringify(statistics),
+    });
+    
+    return statistics;
+  } catch (error) {
+    console.error('Error updating statistics:', error);
+    // Don't throw, just log
+  }
+}
+
+// Get statistics
+export async function getStatistics(admin) {
+  try {
+    const statsResponse = await admin.graphql(
+      `#graphql
+      query {
+        currentAppInstallation {
+          metafield(namespace: "tree_planting", key: "statistics") {
+            value
+          }
+        }
+      }`
+    );
+    
+    const statsData = await statsResponse.json();
+    const statsValue = statsData.data?.currentAppInstallation?.metafield?.value;
+    
+    if (statsValue) {
+      return JSON.parse(statsValue);
+    }
+    
+    return {
+      total_donations: 0,
+      total_trees: 0,
+      total_revenue: 0,
+      last_updated: new Date().toISOString(),
+      monthly_stats: {}
+    };
+  } catch (error) {
+    console.error('Error getting statistics:', error);
+    return {
+      total_donations: 0,
+      total_trees: 0,
+      total_revenue: 0,
+      last_updated: new Date().toISOString(),
+      monthly_stats: {}
+    };
+  }
+}
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
   apiSecretKey: process.env.SHOPIFY_API_SECRET || "",
@@ -677,6 +1055,26 @@ const shopify = shopifyApp({
   authPathPrefix: "/auth",
   sessionStorage: new PrismaSessionStorage(prisma),
   distribution: AppDistribution.AppStore,
+  billing: {
+  essential: {
+    lineItems: [
+      {
+        amount: 6.99,
+        currencyCode: "USD",
+        interval: BillingInterval.Every30Days,
+      }
+    ],
+  },
+  professional: {
+    lineItems: [
+      {
+        amount: 29.99,
+        currencyCode: "USD",
+        interval: BillingInterval.Every30Days,
+      }
+    ],
+  },
+},
   ...(process.env.SHOP_CUSTOM_DOMAIN
     ? { customShopDomains: [process.env.SHOP_CUSTOM_DOMAIN] }
     : {}),

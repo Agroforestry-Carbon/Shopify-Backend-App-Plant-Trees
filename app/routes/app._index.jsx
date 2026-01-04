@@ -1312,105 +1312,107 @@ export default function HomeProductCreation() {
   const [isUpdatingCart, setIsUpdatingCart] = useState(false);
   const [productId, setProductId] = useState(loaderData.productId);
   const [variantId, setVariantId] = useState(loaderData.variantId);
-  const [items, setItems] = useState([
-    {
-      id: 0,
-      title: "Create Tree Planting Product",
-      description: "Set up a special product that allows customers to donate towards planting trees.",
-      complete: false,
-    },
-    {
-      id: 1,
-      title: "Enable Cart Donation Checkbox",
-      description: "Allow customers to add donations to their cart.",
-      complete: false,
-    },
-    {
-      id: 2,
-      title: "Add to Theme (Optional)",
-      description: "Use theme app extension for better integration with your theme.",
-      complete: false,
-    },
-    {
-      id: 3,
-      title: "Set Up Pricing Plan",
-      description: "Choose a pricing plan that fits your store's needs and volume.",
-      complete: false,
-    },
-  ]);
+  // Update the items initialization and useEffect
+const [items, setItems] = useState([
+  {
+    id: 0,
+    title: "Create Tree Planting Product",
+    description: "Set up a special product that allows customers to donate towards planting trees.",
+    complete: loaderData.exists || false,
+  },
+  {
+    id: 1,
+    title: "Enable Cart Donation Checkbox",
+    description: "Allow customers to add donations to their cart.",
+    complete: loaderData.cartEnabled || false,
+  },
+  {
+    id: 2,
+    title: "Add to Theme (Optional)",
+    description: "Use theme app extension for better integration with your theme.",
+    complete: loaderData.productExists && loaderData.cartEnabled,
+  },
+  {
+    id: 3,
+    title: "Set Up Pricing Plan",
+    description: "Choose a pricing plan that fits your store's needs and volume.",
+    complete: false,
+  },
+]);
 
-  // Update setup items based on actual state
-  useEffect(() => {
-    const updatedItems = items.map(item => {
-      if (item.id === 0) {
-        return { 
-          ...item, 
-          complete: productExists,
-          primaryButton: productExists ? undefined : {
-            content: "Create Product",
-            props: {
-              onClick: () => setShowPriceModal(true),
-              disabled: fetcher.state === 'submitting'
-            }
+// Update the useEffect for step 2
+useEffect(() => {
+  const updatedItems = items.map(item => {
+    if (item.id === 0) {
+      return { 
+        ...item, 
+        complete: productExists,
+        primaryButton: productExists ? undefined : {
+          content: "Create Product",
+          props: {
+            onClick: () => setShowPriceModal(true),
+            disabled: fetcher.state === 'submitting'
           }
-        };
-      }
-      if (item.id === 1) {
-        return { 
-          ...item, 
-          complete: cartEnabled || false,
-          description: !productExists 
-            ? "Please create the Tree Planting product first to enable cart donations."
-            : "Enable the tree planting donation checkbox in the cart for your customers.",
-          primaryButton: productExists && !cartEnabled ? {
-            content: "Enable Now",
-            props: {
-              onClick: () => handleToggleCart(true),
-            }
-          } : undefined
-        };
-      }
-      if (item.id === 2) {
-        return { 
-          ...item,
-          description: productExists && cartEnabled 
-            ? "Add the donation checkbox directly to your theme using our theme app extension for better integration."
-            : "Complete steps 1 and 2 first to enable theme app extension.",
-          complete: false,
-          primaryButton: productExists && cartEnabled ? {
-            content: "Add to Theme",
-            props: {
-              onClick: () => {
-                if (loaderData.shopDomain && loaderData.apiKey && productId && variantId) {
-                  const deeplinkUrl = `https://${loaderData.shopDomain}/admin/themes/current/editor?context=apps&template=cart&activateAppId=${loaderData.apiKey}/tree-planting-donation`;
-                  window.open(deeplinkUrl, '_blank', 'noopener,noreferrer');
-                }
+        }
+      };
+    }
+    if (item.id === 1) {
+      return { 
+        ...item, 
+        complete: cartEnabled || false,
+        description: !productExists 
+          ? "Please create the Tree Planting product first to enable cart donations."
+          : "Enable the tree planting donation checkbox in the cart for your customers.",
+        primaryButton: productExists && !cartEnabled ? {
+          content: "Enable Now",
+          props: {
+            onClick: () => handleToggleCart(true),
+          }
+        } : undefined
+      };
+    }
+    if (item.id === 2) {
+      const themeExtensionReady = productExists && cartEnabled && productId && variantId;
+      return { 
+        ...item,
+        description: themeExtensionReady 
+          ? "Theme extension is ready! You can add the donation checkbox to your cart page or drawer."
+          : "Complete steps 1 and 2 first to enable theme app extension.",
+        complete: themeExtensionReady,
+        primaryButton: themeExtensionReady ? {
+          content: "Add to Theme",
+          props: {
+            onClick: () => {
+              if (loaderData.shopDomain && loaderData.apiKey && productId && variantId) {
+                const deeplinkUrl = `https://${loaderData.shopDomain}/admin/themes/current/editor?context=apps&template=cart&activateAppId=${loaderData.apiKey}/tree-planting-donation`;
+                window.open(deeplinkUrl, '_blank', 'noopener,noreferrer');
               }
             }
-          } : undefined,
-          secondaryButton: productExists && cartEnabled ? {
-            content: "View Instructions",
-            props: {
-              onClick: () => navigate('/app/instructions'),
-            }
-          } : undefined
-        };
-      }
-      if (item.id === 3) {
-        return { 
-          ...item,
-          primaryButton: {
-            content: "View Plans",
-            props: {
-              onClick: () => navigate('/app/pricing'),
-            }
           }
-        };
-      }
-      return item;
-    });
-    setItems(updatedItems);
-  }, [productExists, cartEnabled, fetcher.state, navigate, loaderData.shopDomain, loaderData.apiKey, productId, variantId]);
+        } : undefined,
+        secondaryButton: themeExtensionReady ? {
+          content: "View Instructions",
+          props: {
+            onClick: () => navigate('/app/instructions'),
+          }
+        } : undefined
+      };
+    }
+    if (item.id === 3) {
+      return { 
+        ...item,
+        primaryButton: {
+          content: "View Plans",
+          props: {
+            onClick: () => navigate('/app/pricing'),
+          }
+        }
+      };
+    }
+    return item;
+  });
+  setItems(updatedItems);
+}, [productExists, cartEnabled, fetcher.state, navigate, loaderData.shopDomain, loaderData.apiKey, productId, variantId]);
 
   const isLoading = ["loading", "submitting"].includes(fetcher.state) && fetcher.formMethod === "POST";
   const hasActionError = fetcher.data?.success === false;

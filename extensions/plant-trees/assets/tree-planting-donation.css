@@ -168,3 +168,7 @@
     .tree-planting-donation-wrapper.tree-planting-donation-injected.tree-planting-donation-cart-drawer.cart-drawer-donation {
     display: none !important;
 }
+
+.cart-errors, #CartDrawer-CartErrors,#cart-errors{
+  display:none !important
+}

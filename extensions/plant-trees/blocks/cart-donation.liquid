@@ -210,6 +210,8 @@
           return null;
         }
         
+
+        
         async injectCartDonation() {
           if (this.cartInjected) return;
           
@@ -502,6 +504,9 @@
           
           const result = await response.json();
           console.log('Tree Planting Donation: Added successfully:', result);
+         {% if request.page_type == 'cart' %}
+          location.reload();
+          {% endif %}
           return result;
         }
         
