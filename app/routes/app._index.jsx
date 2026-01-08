@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { useFetcher, useLoaderData, useNavigate } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate, getAppMetafields, setAppMetafield, parseMetafields } from "../shopify.server";
-
+import { syncStoreToExternalAPI } from "../external-api.server";
 // SetupGuide Component
 const SetupGuide = ({ onDismiss, onStepComplete, items }) => {
   const [expanded, setExpanded] = useState(items.findIndex((item) => !item.complete));
@@ -275,7 +275,7 @@ const CartToggle = ({ enabled, onChange, disabled, donationAmount }) => {
           </s-badge>
         </s-stack>
 
-        <s-divider />
+       
 
         <s-stack direction="inline" justifyContent="space-between" alignItems="center">
           <div>
@@ -326,30 +326,17 @@ const CartToggle = ({ enabled, onChange, disabled, donationAmount }) => {
         {/* Preview */}
         {enabled && (
           <>
-            <s-divider />
+         
             <div style={{
-              padding: '16px',
+              padding: '0px',
               backgroundColor: 'var(--p-color-bg-success-subdued)',
               borderRadius: 'var(--p-border-radius-300)',
               border: '1px solid var(--p-color-border-success)',
             }}>
               <s-stack direction="inline" gap="200" alignItems="center">
-                <div style={{
-                  width: '20px',
-                  height: '20px',
-                  borderRadius: 'var(--p-border-radius-100)',
-                  border: '2px solid var(--p-color-border-success)',
-                  backgroundColor: 'var(--p-color-bg-success)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}>
-                  <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
-                    <path d="M11.6666 3.5L5.24998 9.91667L2.33331 7" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                </div>
+                
                 <s-stack direction="block" gap="50">
-                  <s-text fontWeight="medium">
+                  <s-text fontWeight="bold">
                     Add ${parseFloat(donationAmount || "0.00").toFixed(2)} to plant a tree
                   </s-text>
                   <s-text tone="subdued" variant="bodySm">
@@ -514,7 +501,7 @@ const DeepLinkButton = ({ shopDomain, apiKey, disabled = false, productExists, c
   
   const handleConfigureThemeExtension = async () => {
     if (!shopDomain || !apiKey || !productId || !variantId) {
-      console.error('Missing required configuration');
+      // console.error('Missing required configuration');
       shopify.toast.show('Missing configuration. Please refresh the page.', { error: true });
       return;
     }
@@ -531,7 +518,7 @@ const DeepLinkButton = ({ shopDomain, apiKey, disabled = false, productExists, c
       shopify.toast.show('Theme editor opened. Add the "Tree Planting Donation" block to your cart page.');
       
     } catch (error) {
-      console.error('Error configuring theme extension:', error);
+      // console.error('Error configuring theme extension:', error);
       shopify.toast.show('Error opening theme editor', { error: true });
     } finally {
       setIsConfiguring(false);
@@ -574,7 +561,7 @@ const DeepLinkButton = ({ shopDomain, apiKey, disabled = false, productExists, c
           </s-badge>
         </s-stack>
         
-        <s-divider />
+      
         
         <s-stack direction="block" gap="200">
           <s-text>
@@ -584,7 +571,7 @@ const DeepLinkButton = ({ shopDomain, apiKey, disabled = false, productExists, c
           <s-text tone="subdued" variant="bodySm">
             This provides a more seamless experience and allows for better customization.
           </s-text>
-          
+          <br></br>
           {productId && variantId && cartEnabled && (
             <s-banner status="success">
               <s-stack direction="block" gap="small">
@@ -596,7 +583,7 @@ const DeepLinkButton = ({ shopDomain, apiKey, disabled = false, productExists, c
             </s-banner>
           )}
         </s-stack>
-        
+        <br></br>
         <s-stack direction="inline" gap="200" justifyContent="space-between" alignItems="center">
           <s-button
             variant="primary"
@@ -608,7 +595,16 @@ const DeepLinkButton = ({ shopDomain, apiKey, disabled = false, productExists, c
             {isConfiguring ? 'Opening...' : 'Add to Cart Page'}
           </s-button>
           
+         
+          <s-stack direction="inline" gap="200" justifyContent="end">
           <s-button
+            variant="tertiary"
+            onClick={handleViewInstructions}
+            icon="help"
+          >
+            View Instructions
+          </s-button>
+           <s-button
             variant="secondary"
             onClick={handleOpenCartDrawer}
             disabled={disabled || !shopDomain || !apiKey || !productId || !variantId || !cartEnabled}
@@ -617,16 +613,9 @@ const DeepLinkButton = ({ shopDomain, apiKey, disabled = false, productExists, c
             Add to Cart Drawer
           </s-button>
         </s-stack>
-        
-        <s-stack direction="inline" gap="200" justifyContent="end">
-          <s-button
-            variant="tertiary"
-            onClick={handleViewInstructions}
-            icon="help"
-          >
-            View Instructions
-          </s-button>
         </s-stack>
+        
+        
         
         {(!shopDomain || !apiKey) && (
           <s-banner status="warning">
@@ -656,41 +645,80 @@ const DeepLinkButton = ({ shopDomain, apiKey, disabled = false, productExists, c
   );
 };
 
-// Loader function
 export const loader = async ({ request }) => {
   try {
     const { admin } = await authenticate.admin(request);
 
-    // Get shop domain
+    /* ----------------------------------------------------
+     * 1️⃣ FETCH SHOP INFO (ADMIN GRAPHQL – VALID SCHEMA)
+     * -------------------------------------------------- */
     const shopResponse = await admin.graphql(
       `#graphql
       query {
         shop {
-          myshopifyDomain
           id
+          name
+          email
+          myshopifyDomain
+          currencyCode
+          billingAddress {
+            country
+          }
+          plan {
+            displayName
+          }
         }
       }`
     );
+
     const shopJson = await shopResponse.json();
-    const shopDomain = shopJson.data?.shop?.myshopifyDomain || null;
-    const shopId = shopJson.data?.shop?.id || null;
-    
-    // Get API key from environment
+
+   
+    const shop = shopJson.data?.shop;
+
+    const shopDomain = shop?.myshopifyDomain || null;
+    const shopId = shop?.id || null;
     const apiKey = process.env.SHOPIFY_API_KEY || "";
 
-    // Get all app metafields
+    /* ----------------------------------------------------
+     * 2️⃣ SYNC STORE → EXTERNAL BILLING API (SAFE)
+     * -------------------------------------------------- */
+    if (shopDomain) {
+      try {
+        await syncStoreToExternalAPI({
+          shopDomain,
+          name: shop?.name,
+          email: shop?.email,
+          country: shop?.billingAddress?.country,
+          currency: shop?.currencyCode,
+          planName: shop?.plan?.displayName
+        });
+
+        //  console.log("Fetched shop DOMAINNNN:");
+      } catch (err) {
+        // IMPORTANT: never break the app if external API fails
+        console.error("External billing sync failed:", err);
+      }
+    }
+
+    /* ----------------------------------------------------
+     * 3️⃣ LOAD APP METAFIELDS
+     * -------------------------------------------------- */
     const metafields = await getAppMetafields(admin);
     const parsedFields = parseMetafields(metafields);
-    
-    console.log('Loaded metafields:', parsedFields);
 
+    // console.log("Loaded metafields:", parsedFields);
+
+    /* ----------------------------------------------------
+     * 4️⃣ PRODUCT / VARIANT DETECTION
+     * -------------------------------------------------- */
     let shopifyProduct = null;
     let exists = false;
-    let productId = parsedFields.product_id;
+    let productId = parsedFields.product_id || null;
     let variantId = null;
     let productPrice = parsedFields.donation_amount || "5.00";
-    
-    // Check if product exists in Shopify
+
+    // Try loading product by stored ID
     if (productId) {
       try {
         const response = await admin.graphql(
@@ -701,7 +729,7 @@ export const loader = async ({ request }) => {
               title
               handle
               status
-              variants(first: 10) {
+              variants(first: 1) {
                 edges {
                   node {
                     id
@@ -711,56 +739,52 @@ export const loader = async ({ request }) => {
               }
             }
           }`,
-          {
-            variables: { id: productId }
-          }
+          { variables: { id: productId } }
         );
+
         const responseJson = await response.json();
-        
+
         if (responseJson.data?.product) {
           shopifyProduct = responseJson.data.product;
           exists = true;
           variantId = shopifyProduct.variants.edges[0]?.node?.id || null;
-          productPrice = shopifyProduct.variants.edges[0]?.node?.price || "5.00";
-          
-          // Update donation amount from product price
+          productPrice =
+            shopifyProduct.variants.edges[0]?.node?.price || "5.00";
+
+          // Sync donation amount metafield
           if (parsedFields.donation_amount !== productPrice) {
-            // Update metafield with current price
             await setAppMetafield(admin, {
-              key: 'donation_amount',
-              type: 'string',
-              value: productPrice,
+              key: "donation_amount",
+              type: "string",
+              value: productPrice
             });
-            parsedFields.donation_amount = productPrice;
           }
         } else {
-          // Product not found in Shopify, clear stored ID
           await setAppMetafield(admin, {
-            key: 'product_id',
-            type: 'string',
-            value: "",
+            key: "product_id",
+            type: "string",
+            value: ""
           });
           productId = null;
         }
-      } catch (error) {
-        console.error('Error fetching product by ID:', error);
+      } catch (err) {
+        console.error("Error loading product by ID:", err);
       }
     }
-    
-    // If no product found by ID, search by title
+
+    // Fallback: search product by title
     if (!shopifyProduct) {
       try {
         const response = await admin.graphql(
           `#graphql
           query {
-            products(first: 10, query: "title:'Support Tree Planting'") {
+            products(first: 5, query: "title:'Support Tree Planting'") {
               edges {
                 node {
                   id
                   title
-                  handle
                   status
-                  variants(first: 10) {
+                  variants(first: 1) {
                     edges {
                       node {
                         id
@@ -773,41 +797,42 @@ export const loader = async ({ request }) => {
             }
           }`
         );
+
         const responseJson = await response.json();
-        const products = responseJson.data.products.edges;
-        
-        if (products && products.length > 0) {
-          shopifyProduct = products[0].node;
+        const product = responseJson.data?.products?.edges?.[0]?.node;
+
+        if (product) {
+          shopifyProduct = product;
           exists = true;
-          variantId = shopifyProduct.variants.edges[0]?.node?.id || null;
-          productPrice = shopifyProduct.variants.edges[0]?.node?.price || "5.00";
-          
-          // Store product ID in metafields
+          productId = product.id;
+          variantId = product.variants.edges[0]?.node?.id || null;
+          productPrice = product.variants.edges[0]?.node?.price || "5.00";
+
           await setAppMetafield(admin, {
-            key: 'product_id',
-            type: 'string',
-            value: shopifyProduct.id,
+            key: "product_id",
+            type: "string",
+            value: productId
           });
-          
-          // Store donation amount
+
           await setAppMetafield(admin, {
-            key: 'donation_amount',
-            type: 'string',
-            value: productPrice,
+            key: "donation_amount",
+            type: "string",
+            value: productPrice
           });
-          parsedFields.donation_amount = productPrice;
         }
-      } catch (error) {
-        console.error('Error searching product by title:', error);
+      } catch (err) {
+        console.error("Error searching product by title:", err);
       }
     }
 
-    // Check cart enabled status
-    const cartEnabled = parsedFields.cart_enabled === 'true' || parsedFields.cart_enabled === true;
-    
-    // Store frontend configuration for theme extension
+    /* ----------------------------------------------------
+     * 5️⃣ CART + FRONTEND CONFIG
+     * -------------------------------------------------- */
+    const cartEnabled =
+      parsedFields.cart_enabled === true ||
+      parsedFields.cart_enabled === "true";
+
     if (exists && cartEnabled && productId && variantId && shopDomain) {
-      // Create a configuration object for the frontend
       const frontendConfig = {
         enabled: true,
         donation_amount: productPrice,
@@ -816,26 +841,22 @@ export const loader = async ({ request }) => {
         shop_domain: shopDomain,
         last_updated: new Date().toISOString()
       };
-      
+
       await setAppMetafield(admin, {
-        key: 'frontend_config',
-        type: 'json',
+        key: "frontend_config",
+        type: "json",
         value: JSON.stringify(frontendConfig)
       });
-      
-      // Also update theme extension config
+
       await setAppMetafield(admin, {
-        key: 'theme_extension_config',
-        type: 'json',
+        key: "theme_extension_config",
+        type: "json",
         value: JSON.stringify(frontendConfig)
       });
-      
-      console.log('Frontend config stored:', frontendConfig);
     } else {
-      // Clear frontend config if not ready
       await setAppMetafield(admin, {
-        key: 'frontend_config',
-        type: 'json',
+        key: "frontend_config",
+        type: "json",
         value: JSON.stringify({
           enabled: false,
           donation_amount: "5.00",
@@ -845,28 +866,34 @@ export const loader = async ({ request }) => {
         })
       });
     }
-    
-    return { 
-      shopifyProduct, 
-      exists, 
+
+    /* ----------------------------------------------------
+     * 6️⃣ RETURN DATA TO UI
+     * -------------------------------------------------- */
+    return {
+      shopifyProduct,
+      exists,
+      productExists: exists, // alias for UI
       hasError: false,
       donationAmount: productPrice,
-      cartEnabled: cartEnabled,
+      cartEnabled,
       productData: parsedFields.product_data || null,
       metafields: parsedFields,
       shopDomain,
       apiKey,
-      productId: productId,
-      variantId: variantId,
+      productId,
+      variantId,
       shopId
     };
   } catch (error) {
-    console.error('Loader error:', error);
+    console.error("Index loader error:", error);
+
     return {
       shopifyProduct: null,
       exists: false,
+      productExists: false,
       hasError: true,
-      errorMessage: error.message || 'Failed to load app data',
+      errorMessage: error.message || "Failed to load app data",
       donationAmount: "5.00",
       cartEnabled: false,
       shopDomain: null,
@@ -887,7 +914,7 @@ export const action = async ({ request }) => {
     const price = formData.get("price");
     const cartEnabled = formData.get("cartEnabled");
 
-    console.log(`Action received: ${actionType}, price: ${price}, cartEnabled: ${cartEnabled}`);
+    // console.log(`Action received: ${actionType}, price: ${price}, cartEnabled: ${cartEnabled}`);
 
     if (actionType === "create") {
       // Check if product already exists
@@ -973,7 +1000,7 @@ export const action = async ({ request }) => {
       const variantId = product.variants.edges[0]?.node?.id;
       const currentPrice = price || "5.00";
 
-      console.log(`Product created: ${product.id}, Variant: ${variantId}, Price: ${currentPrice}`);
+      // console.log(`Product created: ${product.id}, Variant: ${variantId}, Price: ${currentPrice}`);
 
       // Update variant price if specified
       if (price && variantId) {
@@ -1011,7 +1038,7 @@ export const action = async ({ request }) => {
       }
 
       // SET METAFIELDS FOR THEME APP EXTENSION (tree_planting namespace)
-      console.log('Setting theme app extension metafields...');
+      // console.log('Setting theme app extension metafields...');
       
       // Delete existing boolean metafields to ensure clean slate
       try {
@@ -1089,7 +1116,7 @@ export const action = async ({ request }) => {
         }),
       });
 
-      console.log('Product creation complete with all metafields set');
+      // console.log('Product creation complete with all metafields set');
 
       // Verify the boolean was set correctly
       const verifyResponse = await admin.graphql(
@@ -1108,7 +1135,7 @@ export const action = async ({ request }) => {
       
       const verifyJson = await verifyResponse.json();
       const metafield = verifyJson.data?.currentAppInstallation?.metafield;
-      console.log('✅ Created boolean metafield verification:', metafield);
+      // console.log('✅ Created boolean metafield verification:', metafield);
 
       return {
         product,
@@ -1118,7 +1145,7 @@ export const action = async ({ request }) => {
     } 
     
     else if (actionType === "updateCart") {
-      console.log(`Updating cart: cartEnabled = ${cartEnabled}`);
+      // console.log(`Updating cart: cartEnabled = ${cartEnabled}`);
       
       // Convert string to boolean
       const isCartEnabled = cartEnabled === 'true';
@@ -1145,7 +1172,7 @@ export const action = async ({ request }) => {
         };
       }
       
-      console.log(`Product found: ${productId}`);
+      // console.log(`Product found: ${productId}`);
       
       // Fetch product details to get current price and variant
       let variantId, currentPrice;
@@ -1180,7 +1207,7 @@ export const action = async ({ request }) => {
           };
         }
         
-        console.log(`Product verified: ${productJson.data.product.title}, Variant: ${variantId}, Current Price: ${currentPrice}`);
+        // console.log(`Product verified: ${productJson.data.product.title}, Variant: ${variantId}, Current Price: ${currentPrice}`);
       } catch (error) {
         console.error('Error verifying product:', error);
         return { 
@@ -1571,7 +1598,7 @@ useEffect(() => {
                 <s-banner status="success">
                   <s-stack direction="block" gap="small">
                     <s-paragraph>
-                      <s-icon source="check" tone="success" /> Product is active!
+                      <div style={{display:"flex"}}> Product is active!</div>
                     </s-paragraph>
                     <s-paragraph tone="subdued" variant="bodySm">
                       Current donation amount: ${parseFloat(loaderData.donationAmount || "0.00").toFixed(2)} per tree
@@ -1602,7 +1629,7 @@ useEffect(() => {
                 </s-banner>
 
                 {/* Product Details */}
-                {loaderData.shopifyProduct && (
+                {/* {loaderData.shopifyProduct && (
                   <s-box 
                     padding="base" 
                     borderWidth="base" 
@@ -1637,7 +1664,7 @@ useEffect(() => {
                       </s-stack>
                     </s-stack>
                   </s-box>
-                )}
+                )} */}
 
                 {/* Cart Settings Section - Integrated below product */}
                 <CartToggle
@@ -1650,7 +1677,7 @@ useEffect(() => {
                 {/* Theme App Extension Section */}
                 {cartEnabled && productExists && (
                   <>
-                    <s-divider />
+                    {/* <s-divider /> */}
                     <DeepLinkButton 
                       shopDomain={loaderData.shopDomain}
                       apiKey={loaderData.apiKey}
@@ -1682,8 +1709,8 @@ useEffect(() => {
             {/* Next Steps */}
             {productExists && (
               <>
-                <s-divider />
-                <s-stack direction="block" gap="small">
+                {/* <s-divider /> */}
+                {/* <s-stack direction="block" gap="small">
                   <s-heading level="h4">Next Steps</s-heading>
                   <s-stack direction="inline" gap="base">
                     <s-button
@@ -1711,7 +1738,7 @@ useEffect(() => {
                       Setup Instructions
                     </s-button>
                   </s-stack>
-                </s-stack>
+                </s-stack> */}
               </>
             )}
           </s-stack>

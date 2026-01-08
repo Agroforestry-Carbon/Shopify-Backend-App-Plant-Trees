@@ -16,7 +16,7 @@ const APP_METAFIELD_NAMESPACE = "tree_planting";
 // In shopify.server.js - update getAppMetafields to fetch from currentAppInstallation
 export async function getAppMetafields(admin) {
   try {
-    console.log('Fetching app metafields from currentAppInstallation...');
+    // console.log('Fetching app metafields from currentAppInstallation...');
     
     const response = await admin.graphql(
       `#graphql
@@ -102,7 +102,7 @@ export async function setAppMetafield(
       preparedValue = String(value);
     }
 
-    console.log(`Setting metafield ${namespace}.${key} as ${type} with value: ${preparedValue} (input value: ${value}, type: ${typeof value})`);
+    // console.log(`Setting metafield ${namespace}.${key} as ${type} with value: ${preparedValue} (input value: ${value}, type: ${typeof value})`);
 
     // 3. Call metafieldsSet with a single MetafieldsSetInput
     const response = await admin.graphql(
@@ -151,7 +151,7 @@ export async function setAppMetafield(
 
     // metafields is an array because metafieldsSet is bulk
     const createdMetafield = result.metafields?.[0] ?? null;
-    console.log(`✅ Metafield ${namespace}.${key} set successfully:`, createdMetafield);
+    // console.log(`✅ Metafield ${namespace}.${key} set successfully:`, createdMetafield);
     return createdMetafield;
   } catch (error) {
     console.error('Error setting metafield:', error);
@@ -277,7 +277,7 @@ export async function deleteAppMetafield(admin, key) {
 // Update the parseMetafields function for proper boolean handling
 export function parseMetafields(metafields) {
   try {
-    console.log('Parsing metafields array:', metafields);
+    // console.log('Parsing metafields array:', metafields);
     
     const parsed = {};
     
@@ -300,7 +300,7 @@ export function parseMetafields(metafields) {
           // Handle boolean type correctly - convert string to boolean
           // Shopify stores booleans as strings "true"/"false"
           parsed[node.key] = node.value === 'true' || node.value === true;
-          console.log(`📊 Parsed boolean metafield ${node.key}: ${node.value} -> ${parsed[node.key]}`);
+          // console.log(`📊 Parsed boolean metafield ${node.key}: ${node.value} -> ${parsed[node.key]}`);
         } else if (node.type === 'number_integer' || node.type === 'number_decimal') {
           parsed[node.key] = Number(node.value);
         } else {
@@ -317,7 +317,7 @@ export function parseMetafields(metafields) {
       }
     });
     
-    console.log('✅ Parsed metafields:', parsed);
+    // console.log('✅ Parsed metafields:', parsed);
     return parsed;
   } catch (error) {
     console.error('Error parsing metafields:', error);
@@ -349,7 +349,7 @@ export async function getAllAppMetafields(admin) {
     const json = await response.json();
     const edges = json.data?.currentAppInstallation?.metafields?.edges || [];
     
-    console.log(`Found ${edges.length} total metafields`);
+    // console.log(`Found ${edges.length} total metafields`);
     
     return edges.map(edge => edge.node);
   } catch (error) {
@@ -401,7 +401,7 @@ export async function deleteAppMetafield(admin, key, namespace = 'tree_planting'
     const response = await admin.graphql(mutation, { variables });
     const result = await response.json();
     
-    console.log(`Deleted metafield ${namespace}.${key}:`, result.data?.metafieldsDelete);
+    // console.log(`Deleted metafield ${namespace}.${key}:`, result.data?.metafieldsDelete);
     
     return result;
   } catch (error) {
